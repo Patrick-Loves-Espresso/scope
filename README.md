@@ -93,7 +93,7 @@ allows workers/reviewers to mutate the index lifecycle themselves.
 Clone Scope first:
 
 ```bash
-git clone https://github.com/PatD42/scope.git
+git clone https://github.com/Patrick-Loves-Espresso/scope.git
 cd scope
 ```
 

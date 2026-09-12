@@ -72,7 +72,7 @@ direct reads and `rg` never weakens proof or validation.
 ## Installation
 
 ```bash
-git clone https://github.com/PatD42/scope.git
+git clone https://github.com/Patrick-Loves-Espresso/scope.git
 cd scope
 python3 -m pip install -r requirements.txt
 ```

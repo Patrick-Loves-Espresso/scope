@@ -5,10 +5,10 @@
   "author": {
     "name": "AquaForge",
     "email": "patrick.drolet@aquaforge.ai",
-    "url": "https://github.com/PatD42/scope"
+    "url": "https://github.com/Patrick-Loves-Espresso/scope"
   },
-  "homepage": "https://github.com/PatD42/scope",
-  "repository": "https://github.com/PatD42/scope",
+  "homepage": "https://github.com/Patrick-Loves-Espresso/scope",
+  "repository": "https://github.com/Patrick-Loves-Espresso/scope",
   "license": "MIT",
   "keywords": [
     "scope",
@@ -28,7 +28,7 @@
       "Interactive",
       "Write"
     ],
-    "websiteURL": "https://github.com/PatD42/scope",
+    "websiteURL": "https://github.com/Patrick-Loves-Espresso/scope",
     "defaultPrompt": [
       "Run scope:re_documentation for this codebase.",
       "Run scope:epic_refine E1.",
