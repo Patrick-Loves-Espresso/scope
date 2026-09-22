@@ -72,7 +72,7 @@ if args == ["auth", "status", "--json"]:
     raise SystemExit(0)
 if args == ["models"]:
     record("models", args)
-    print("gemini-3.1-pro-high\ngemini-3.5-flash-high")
+    print("gemini-3.1-pro-high\ngemini-3.8-flash-high")
     raise SystemExit(0)
 
 model = args[args.index("--model") + 1]
@@ -710,7 +710,7 @@ def test_agy_fallback_is_explicit_and_only_before_semantic_output(
     assert code == 0 and len(row["attempts"]) == 2
     assert row["fallback"] == {
         "from_model": "gemini-3.1-pro-high",
-        "to_model": "gemini-3.5-flash-high",
+        "to_model": "gemini-3.8-flash-high",
         "reason": "rate_or_quota_exhausted_before_semantic_output",
     }
 

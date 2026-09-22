@@ -222,7 +222,7 @@ providers:
     models_args:
       - models
     transport: agy-print
-    fallback_model: gemini-3.5-flash-high
+    fallback_model: gemini-3.8-flash-high
     fallback_workflows:
       - audit
     supervisor_timeout_seconds: 3660

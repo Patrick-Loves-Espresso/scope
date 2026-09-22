@@ -170,7 +170,7 @@ def test_quota_fallback_launch_failure_is_recorded_without_semantic_success(tmp_
     packet, template = fixtures._packet(repo, 'audit', [{'provider': 'agy', 'mission': 'semantic_core'}])
     launch = RUNNER.launch_process
     def fail_fallback(command, config, paths, root, model):
-        if model == 'gemini-3.5-flash-high': raise OSError('fallback binary unavailable')
+        if model == 'gemini-3.8-flash-high': raise OSError('fallback binary unavailable')
         return launch(command, config, paths, root, model)
     monkeypatch.setattr(RUNNER, 'launch_process', fail_fallback)
     code, receipt = RUNNER.run_reviewers(fixtures._args(repo, policy, packet, template, 'audit'))
