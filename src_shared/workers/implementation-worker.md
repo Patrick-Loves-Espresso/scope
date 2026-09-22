@@ -17,6 +17,10 @@ decision is required, return `needs_user` with every blocking question
 currently discoverable, its reason, and concrete evidence. Do not ask one
 question at a time. Return `blocked` when required proof cannot be completed
 from authorized inputs.
+For audit remediation, finish assigned corrections even when a separate,
+excluded audit candidate still needs user input. Return `completed` with that
+question and a major issue so both the completed work and the open decision
+remain durable. This exception does not broaden your write scope.
 
 Report every actual changed path and required validation result. For manifest
 v3, return `proof_evidence: []`. Scope executes and records authoritative proofs

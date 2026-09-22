@@ -989,6 +989,34 @@ def test_explicit_recovery_revalidates_a_legacy_idle_interrupted_job(
     assert Path(job["result_path"]).is_file()
 
 
+def test_audit_remediation_recovery_keeps_completed_work_and_open_question(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _, run_path, job, _ = _orphaned_write_run(
+        monkeypatch, tmp_path, include_after=True
+    )
+    run = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+    active = run["active_job"]
+    job_path = Path(active["job_path"])
+    job["phase"] = "audit_remediation"
+    job_path.write_text(yaml.safe_dump(job, sort_keys=False), encoding="utf-8")
+    active["phase"] = "audit_remediation"
+    active["job_sha256"] = RUNNER._sha256_file(job_path)
+    RUNNER.atomic_write_yaml(run_path, run)
+    provider_result = Path(active["provider_result_path"])
+    result = json.loads(provider_result.read_text(encoding="utf-8"))
+    question = {"id": "AF-003", "question": "Choose authority", "reason": "Outside this job", "evidence": ["docs/design.md"]}
+    result["questions"] = [question]
+    result["issues"] = [{"severity": "major", "message": "Decision remains open", "evidence": ["docs/design.md"]}]
+    RUNNER.atomic_write_json(provider_result, result)
+
+    row = RUNNER.recover_run(run_path)
+
+    assert row["status"] == "completed"
+    assert row["questions"] == [question]
+    assert Path(job["result_path"]).is_file()
+
+
 def test_recovery_replays_an_already_promoted_evidence_transaction(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -1325,7 +1353,7 @@ def test_claude_transport_and_local_validation_preserve_result_constraints(role:
         result["payload"] = {"kind": role}
     if case == "questions_not_array":
         result["questions"] = None
-    assert Draft202012Validator(canonical).is_valid(result) is valid
+    assert Draft202012Validator(canonical).is_valid(result) is (valid or case == "completed_with_question")
     local_only = case in {
         "completed_with_question", "needs_user_without_question", "blocked_without_issue", "failed_with_minor_only",
     }
@@ -1333,7 +1361,7 @@ def test_claude_transport_and_local_validation_preserve_result_constraints(role:
     if not valid:
         # The runner must reject malformed responses even when the API's schema
         # subset cannot express the status-dependent rules.
-        with pytest.raises(RUNNER.ContractError, match="worker result"):
+        with pytest.raises(RUNNER.ContractError, match="completed result has questions" if case == "completed_with_question" else "worker result"):
             RUNNER.validate_result(result, {}, canonical)
 
 

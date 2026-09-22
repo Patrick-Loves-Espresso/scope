@@ -44,9 +44,9 @@ REPOSITORY_ROOT="$(cd "${GIT_COMMON_DIR}/.." && pwd -P)"
 EPIC_DIR="$(find "$WORKING_ROOT/docs/epics" -mindepth 1 -maxdepth 1 -type d \
   -iname "*${EPIC_ID}*" -print | sort | head -1)"
 # Codex:
-PROVIDER="codex"; SCOPE_ROOT="$(cd "$WORKING_ROOT/plugins/scope" && pwd -P)"
+PROVIDER="codex"; SCOPE_ROOT="$(cd "$REPOSITORY_ROOT/plugins/scope" && pwd -P)"
 # Claude instead uses:
-# PROVIDER="claude"; SCOPE_ROOT="$(cd "$WORKING_ROOT/.claude" && pwd -P)"
+# PROVIDER="claude"; SCOPE_ROOT="$(cd "$REPOSITORY_ROOT/.claude" && pwd -P)"
 WORKER="${SCOPE_ROOT}/scripts/scope-worker.py"
 REVIEWER="${SCOPE_ROOT}/scripts/scope-reviewer.py"
 REFINEMENT="${SCOPE_ROOT}/scripts/validate-refinement.py"
@@ -62,6 +62,8 @@ REVIEWER_SET="standard"        # expanded only when the user asks
 Resolve exactly one epic and one interpreter. Require the runners, policies,
 v2 run contract, executor policy, reviewer template, current approved refinement
 handoff, delivery manifest, and implementation evidence.
+Use the main checkout's Scope installation for a worktree audit; installing Scope
+inside the worktree changes the runner-validated workspace snapshot.
 
 ```bash
 "$PYTHON_CMD" "$REFINEMENT" validate "$EPIC_DIR" \

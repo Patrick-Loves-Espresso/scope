@@ -1340,6 +1340,15 @@ def _provider_result(provider: str, provider_result_path: Path, stdout_path: Pat
 
 def validate_result(result: Mapping[str, Any], job: Mapping[str, Any], schema: Mapping[str, Any]) -> None:
     validate_against_schema(result, schema, "worker result")
+    if result["status"] == "completed" and result["questions"]:
+        if not (
+            job.get("role") == "implementation"
+            and job.get("phase") == "audit_remediation"
+            and any(issue["severity"] == "major" for issue in result["issues"])
+        ):
+            raise ContractError(
+                "completed result has questions outside audit remediation or without a major issue"
+            )
     if result["job_id"] != job["job_id"]:
         raise ContractError("worker result job_id does not match")
     if result["payload"]["kind"] != job["role"]:
@@ -2174,6 +2183,8 @@ def _finalize_result(
         "started_at": active["started_at"],
         "completed_at": utc_now(),
     }
+    if result["questions"]:
+        row["questions"] = result["questions"]
     if job["role"] == "implementation" and job["phase"] != "delivery_summary" and result["status"] == "completed" and checkpoint is not None:
         row["checkpoint"] = {key: checkpoint[key] for key in ("path", "sha256", "status", "duration_seconds")}
         if checkpoint["status"] != "pass":

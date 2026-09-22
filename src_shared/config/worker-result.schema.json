@@ -163,10 +163,6 @@
   },
   "allOf": [
     {
-      "if": {"properties": {"status": {"type": "string", "const": "completed"}}, "required": ["status"]},
-      "then": {"properties": {"questions": {"maxItems": 0}}}
-    },
-    {
       "if": {"properties": {"status": {"type": "string", "const": "needs_user"}}, "required": ["status"]},
       "then": {"properties": {"questions": {"minItems": 1}}}
     },
