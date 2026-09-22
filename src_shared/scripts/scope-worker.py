@@ -1360,9 +1360,27 @@ def validate_result(result: Mapping[str, Any], job: Mapping[str, Any], schema: M
         missing = required - set(validations)
         if missing:
             raise ContractError(f"missing required validations: {sorted(missing)}")
-        failed = [command for command, row in validations.items() if row["exit_code"] != 0]
-        if failed:
-            raise ContractError(f"completed result has failed validations: {failed}")
+        failed_required = sorted(
+            command
+            for command, row in validations.items()
+            if command in required and row["exit_code"] != 0
+        )
+        if failed_required:
+            raise ContractError(
+                f"completed result has failed validations (required): {failed_required}"
+            )
+        failed_advisory = sorted(
+            command
+            for command, row in validations.items()
+            if command not in required and row["exit_code"] != 0
+        )
+        if failed_advisory and not any(
+            row["severity"] == "major" for row in result["issues"]
+        ):
+            raise ContractError(
+                "failed optional validations must be surfaced as a major issue: "
+                f"{failed_advisory}"
+            )
         if any(row["severity"] == "blocking" for row in result["issues"]):
             raise ContractError("completed result has a blocking issue")
     executor_owned = False
@@ -2156,6 +2174,14 @@ def _finalize_result(
         row["modelUsage"] = model_usage
     if isinstance(provider_fallback, bool):
         row["provider_reported_fallback"] = provider_fallback
+    required_commands = {item["command"] for item in job["required_validations"]}
+    advisory_failures = sorted(
+        item["command"]
+        for item in result["validations"]
+        if item["command"] not in required_commands and item["exit_code"] != 0
+    )
+    if advisory_failures:
+        row["advisory_validation_failures"] = advisory_failures
     run["completed_jobs"].append(row)
     run["active_job"] = None
     _write_run(run_path, run)
@@ -2180,6 +2206,23 @@ def _interrupt(
         "changed_paths": sorted(changed_paths),
         "started_at": active["started_at"],
         "completed_at": utc_now(),
+        "recovery": {
+            key: active.get(key)
+            for key in (
+                "role",
+                "access",
+                "job_path",
+                "job_sha256",
+                "result_path",
+                "provider_result_path",
+                "stdout_path",
+                "stderr_path",
+                "cancellation_path",
+                "before_snapshot",
+                "after_snapshot",
+                "read_identity_before",
+            )
+        },
     }
     run["completed_jobs"].append(row)
     run["active_job"] = None
@@ -2656,7 +2699,58 @@ def _recover_result(run_path: Path, run: dict[str, Any], working_root: Path) -> 
         return _interrupt(run_path, run, str(exc), changed)
 
 
-def recover_run(run_path: Path) -> dict[str, Any]:
+def _interrupted_active(
+    run_path: Path,
+    run: Mapping[str, Any],
+    row: Mapping[str, Any],
+) -> dict[str, Any]:
+    job_id = str(row.get("job_id", ""))
+    job_dir = run_path.parent / "jobs" / job_id
+    job_path = job_dir / "job.yaml"
+    job, repository_root, _, _ = load_job(job_path, verify_artifact_hashes=False)
+    if job["job_id"] != job_id:
+        raise ContractError("interrupted recovery job_id does not match its packet")
+    expected_dir = job_directory(job, repository_root)
+    if _normcase(job_dir) != _normcase(expected_dir):
+        raise ContractError("interrupted recovery job directory is invalid")
+    retained = row.get("recovery")
+    retained = retained if isinstance(retained, Mapping) else {}
+    job_sha256 = retained.get("job_sha256")
+    if isinstance(job_sha256, str) and job_sha256 != _sha256_file(job_path):
+        raise ContractError("interrupted recovery job packet changed")
+    access = "workspace-write" if job["write_scope"] else "read-only"
+    if access == "read-only" and not isinstance(retained.get("read_identity_before"), Mapping):
+        raise ContractError(
+            "legacy interrupted read-only jobs lack a retained tree identity"
+        )
+    return {
+        "job_id": job_id,
+        "role": job["role"],
+        "phase": job["phase"],
+        "provider": row["provider"],
+        "requested_model": row["requested_model"],
+        "reasoning_effort": row["reasoning_effort"],
+        "worker_profile": row["worker_profile"],
+        "access": access,
+        "job_path": str(job_path),
+        "job_sha256": _sha256_file(job_path),
+        "result_path": job["result_path"],
+        "provider_result_path": str(job_dir / "provider-result.json"),
+        "stdout_path": str(job_dir / "provider.stdout"),
+        "stderr_path": str(job_dir / "provider.stderr"),
+        "cancellation_path": str(job_dir / "cancel.yaml"),
+        "before_snapshot": str(job_dir / "before-snapshot.json") if access == "workspace-write" else None,
+        "after_snapshot": str(job_dir / "after-snapshot.json") if access == "workspace-write" else None,
+        "read_identity_before": retained.get("read_identity_before"),
+        "started_at": row["started_at"],
+        "runner_process": None,
+        "provider_process": None,
+        "provider_process_group": None,
+        "provider_descendants": [],
+    }
+
+
+def recover_run(run_path: Path, job_id: str | None = None) -> dict[str, Any]:
     _, repository_root, _ = _load_run(run_path)
     state_guard = FileLock(
         str(_validated_state_lock_path(run_path, repository_root))
@@ -2670,7 +2764,37 @@ def recover_run(run_path: Path) -> dict[str, Any]:
         run, _, working_root = _load_run(run_path)
         active = run.get("active_job")
         if not isinstance(active, dict):
-            return {"status": "idle", "run": str(run_path)}
+            if job_id is None:
+                return {"status": "idle", "run": str(run_path)}
+            if not JOB_ID_PATTERN.fullmatch(job_id):
+                raise ContractError("recovery job_id is invalid")
+            if not run["completed_jobs"]:
+                raise ContractError("worker run has no interrupted job to recover")
+            interrupted = run["completed_jobs"][-1]
+            if (
+                not isinstance(interrupted, Mapping)
+                or interrupted.get("job_id") != job_id
+                or interrupted.get("status") != "interrupted"
+            ):
+                raise ContractError(
+                    "only the last interrupted job can be explicitly recovered"
+                )
+            active = _interrupted_active(run_path, run, interrupted)
+            run["completed_jobs"].pop()
+            run["active_job"] = active
+            if active["access"] == "workspace-write":
+                lock = FileLock(str(_validated_mutation_lock_path(working_root)))
+                try:
+                    lock.acquire(timeout=0)
+                except FileLockTimeout as exc:
+                    raise ActiveWorkerError(
+                        "recovery refused while mutation lock is held"
+                    ) from exc
+            return _recover_result(run_path, run, working_root)
+        if job_id is not None and active.get("job_id") != job_id:
+            raise ContractError(
+                f"recovery target is stale; active job is {active.get('job_id')}"
+            )
         state = _active_state(active)
         if state != "dead":
             raise ActiveWorkerError(f"recovery refused while worker state is {state}")
@@ -2885,6 +3009,8 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("status", "recover"):
         selected = commands.add_parser(name)
         selected.add_argument("--run", type=Path, required=True)
+        if name == "recover":
+            selected.add_argument("--job-id")
     cancel_parser = commands.add_parser("cancel")
     cancel_parser.add_argument("--run", type=Path, required=True)
     cancel_parser.add_argument("--job-id", required=True)
@@ -2899,7 +3025,11 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(classify_run(args.run.absolute()), sort_keys=True))
             return 0
         if args.subcommand == "recover":
-            print(json.dumps(recover_run(args.run.absolute()), sort_keys=True))
+            print(
+                json.dumps(
+                    recover_run(args.run.absolute(), args.job_id), sort_keys=True
+                )
+            )
             return 0
         if args.subcommand == "cancel":
             print(

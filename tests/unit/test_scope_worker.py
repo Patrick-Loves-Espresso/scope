@@ -620,7 +620,7 @@ def test_implementation_attribution_reports_deliverable_files_not_parent_directo
     ]
 
 
-def test_optional_allowed_validation_result_is_informational_but_failure_blocks(
+def test_optional_allowed_validation_failure_requires_a_visible_major_issue(
     tmp_path: Path,
 ) -> None:
     repo = _repo(tmp_path / "repo")
@@ -635,9 +635,24 @@ def test_optional_allowed_validation_result_is_informational_but_failure_blocks(
     RUNNER.validate_result(result, job, schema)
 
     result["validations"][0]["exit_code"] = 1
-    with pytest.raises(RUNNER.ContractError, match="failed validations"):
+    with pytest.raises(RUNNER.ContractError, match="surfaced as a major issue"):
+        RUNNER.validate_result(result, job, schema)
+    result["issues"] = [
+        {
+            "severity": "major",
+            "message": "Optional environment probe failed",
+            "evidence": ["pytest -q exited 1"],
+        }
+    ]
+    RUNNER.validate_result(result, job, schema)
+
+    job["required_validations"] = [
+        {"command": "pytest -q", "purpose": "required test"}
+    ]
+    with pytest.raises(RUNNER.ContractError, match="failed validations.*required"):
         RUNNER.validate_result(result, job, schema)
 
+    job["required_validations"] = []
     result["validations"] = [
         {"command": "unknown", "exit_code": 0, "summary": "passed"}
     ]
@@ -891,6 +906,31 @@ def test_recovery_publishes_only_when_current_snapshot_matches_recorded_after(
     )
     row = RUNNER.recover_run(run_path)
     assert row["status"] == "completed"
+    assert Path(job["result_path"]).is_file()
+
+
+def test_explicit_recovery_revalidates_a_legacy_idle_interrupted_job(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _, run_path, job, _ = _orphaned_write_run(
+        monkeypatch, tmp_path, include_after=True
+    )
+    run = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+    RUNNER._interrupt(
+        run_path,
+        run,
+        "completed result has failed validations: ['optional probe']",
+        ["src/value.txt"],
+    )
+    interrupted = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+    interrupted["completed_jobs"][-1].pop("recovery")
+    RUNNER.atomic_write_yaml(run_path, interrupted)
+
+    row = RUNNER.recover_run(run_path, job["job_id"])
+
+    assert row["status"] == "completed"
+    final = yaml.safe_load(run_path.read_text(encoding="utf-8"))
+    assert [item["job_id"] for item in final["completed_jobs"]] == [job["job_id"]]
     assert Path(job["result_path"]).is_file()
 
 
