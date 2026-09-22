@@ -1,0 +1,10 @@
+[run]
+source = src_shared/scripts
+data_file = tmp_debug/test.coverage
+parallel = true
+patch = subprocess
+
+[report]
+precision = 2
+fail_under = 85
+show_missing = true

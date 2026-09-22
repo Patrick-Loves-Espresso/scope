@@ -6,6 +6,11 @@ args: "{epic-id}"
 
 # audit_epic
 
+For this orchestration-only session, prefer `gpt-5.6-sol` at high effort in
+Codex or `claude-opus-5` at high effort in Claude. The host session selects its
+own model; worker/reviewer policies do not switch it. Respect an explicit user
+model choice and do not interrupt an active workflow solely to change models.
+
 You are the sole user-facing orchestrator. Deterministic tools own audit state,
 independent reviewers own semantic review, and one bounded read-only worker
 normalizes their findings. Do not inspect implementation broadly, review it
@@ -55,7 +60,7 @@ REVIEWER_SET="standard"        # expanded only when the user asks
 ```
 
 Resolve exactly one epic and one interpreter. Require the runners, policies,
-v2 worker schemas, audit worker, reviewer template, current approved refinement
+v2 run contract, executor policy, reviewer template, current approved refinement
 handoff, delivery manifest, and implementation evidence.
 
 ```bash
@@ -107,29 +112,29 @@ implementation evidence, exact gates, reviewer assignments, and target IDs. It
 does not require implementation HEAD to equal its base because implementation
 is intentionally uncommitted.
 
-One full and one targeted attempt are the normal hard budget. A pending attempt
+One full and one targeted attempt are the normal hard budget. Minor defects
+remain mandatory in both; there is no third audit round. A pending attempt
 is resumed only when its fingerprint, boundary, profiles, set, mode, and targets
 match. Never delete, renumber, or use free-text reason to reset the budget.
 
 ## Mechanical gates
 
-Read exact gate IDs and commands from the attempt. Execute each pending command
-once as its direct argument vector—never through `/bin/sh -lc`, a login shell,
-`eval`, `|| true`, or appended output that can hide an earlier failure. Preserve
-raw output in a durable attempt-local evidence file and parse all result
-summaries. Conflicting/ambiguous counts are `blocked`, not last-match-wins.
-
-Record exit code and pass/fail/error/skip counts. `pass` requires at least one
-applicable passed check, exit code 0, and zero failed/errors/unexplained skips.
-Evidence paths are hashed immediately and rechecked at finalization.
+Use the deterministic executor for pending gates:
 
 ```bash
-"$PYTHON_CMD" "$AUDIT" record-gate "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --run "$RUN" --gate "$GATE_ID" --status "$GATE_STATUS" \
-  --exit-code "$EXIT_CODE" --passed "$PASSED" --failed "$FAILED" \
-  --errors "$ERRORS" --skipped "$SKIPPED" --summary "$SUMMARY" \
-  --evidence "$EVIDENCE_PATH" --policy "$AUDIT_POLICY"
+"$PYTHON_CMD" "$AUDIT" execute-gates "$EPIC_DIR" "$ATTEMPT_DIR" --run "$RUN"
 ```
+
+The executor captures raw output, strict counts, exit code and timing. It reuses
+implementation evidence only for identical argv, cwd, source and approved
+environment fingerprints with intact logs. `fresh: true` always reruns. Missing
+or ambiguous counts fail closed. No model transcribes successful execution.
+A targeted closure must use an approved manifest command or declare the same
+explicit execution contract in hash-bound `remediation.execution`. For a semantic
+closure predicate, retain its text for independent review and bind a runnable
+check separately; `remediation.proof_level` defaults to unit and may explicitly
+name inspection for a non-test check. Reuse runner result rows for remediation
+checks; never transcribe counts from memory.
 
 An unexecuted blocked gate uses `--status blocked --reason ...` and no counts.
 `not_applicable` is never a free-text waiver: first record a current user or
@@ -181,25 +186,16 @@ record hash-bound authority naming its fingerprint:
   --subject "$FINGERPRINT" --source "$AUTHORITY_SOURCE" --decision approved
 ```
 
-Create one v2 `audit/merge_findings` job. Its read scope contains only the
-attempt, packet, receipt and reviewer outputs, gate evidence, existing findings,
-and cited authority. Its write scope and validations are empty. Every artifact
-and decision reference is hash-bound; `required_proof_ids` is `[]`.
+Synthesize all validated sources directly, without a model job:
 
 ```bash
-"$PYTHON_CMD" "$WORKER" preflight --provider "$PROVIDER" \
-  --role audit --phase merge_findings --worker-profile "$WORKER_PROFILE" \
-  --scope-root "$SCOPE_ROOT"
-"$PYTHON_CMD" "$WORKER" run --provider "$PROVIDER" --role audit \
-  --job "$JOB_PATH" --result "$RESULT_PATH" --cwd "$WORKING_ROOT" \
-  --access read-only --worker-profile "$WORKER_PROFILE"
 "$PYTHON_CMD" "$AUDIT" apply-synthesis "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --run "$RUN" --result "$RESULT_PATH" --policy "$AUDIT_POLICY"
+  --run "$RUN" --policy "$AUDIT_POLICY"
 ```
 
 The applier requires every deterministic, reviewer, and active-ledger source
-exactly once; rejects invented/dropped sources, conflicting dispositions and
-categories; preserves maximum severity and minority evidence; and verifies
+exactly once; merges only identical fingerprints, rejects conflicting
+dispositions, categories, or closure tests; preserves maximum severity and minority evidence; and verifies
 accepted-risk authority. A targeted attempt can verify only its named findings
 after strict closure proof and every required detecting provider.
 

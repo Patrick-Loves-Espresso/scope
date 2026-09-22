@@ -468,60 +468,6 @@ def _remediated_audit_finding(repo: Path, epic: Path) -> dict[str, object]:
     }
 
 
-def _result(
-    repo: Path,
-    run: Path,
-    findings: list[dict[str, object]],
-    *,
-    job_id: str = "audit-synthesis-001",
-) -> Path:
-    path = repo / "tmp_debug" / f"{job_id}.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    document = {
-        "schema_version": 2,
-        "job_id": job_id,
-        "status": "completed",
-        "summary": "synthesized",
-        "changed_paths": [],
-        "validations": [],
-        "questions": [],
-        "issues": [],
-        "payload": {"kind": "audit", "findings": findings},
-    }
-    path.write_text(json.dumps(document), encoding="utf-8")
-    run_doc = yaml.safe_load(run.read_text(encoding="utf-8"))
-    run_doc["completed_jobs"].append(
-        {
-            "job_id": job_id,
-            "status": "completed",
-            "result_path": _relative(path, repo),
-            "result_sha256": _sha(path),
-        }
-    )
-    _dump(run, run_doc)
-    return path
-
-
-def _proposal(
-    source_ids: list[str],
-    *,
-    fingerprint: str = "runtime-defect",
-    severity: str = "minor",
-    disposition: str = "remediation_required",
-) -> dict[str, object]:
-    return {
-        "source_ids": source_ids,
-        "fingerprint": fingerprint,
-        "severity": severity,
-        "category": "implementation",
-        "disposition": disposition,
-        "title": "Runtime defect",
-        "evidence": ["src/service.py:10"],
-        "affected_paths": ["src/service.py"],
-        "closure_test": "pytest -q tests/unit/test_one.py",
-    }
-
-
 def test_uncommitted_implementation_evidence_is_fingerprint_bound(tmp_path: Path) -> None:
     repo, epic, _ = _fixture(tmp_path)
     policy = AUDIT._policy(AUDIT._default_policy_path())
@@ -682,14 +628,9 @@ def test_failed_receipt_candidate_is_ingested_and_no_drop_is_enforced(tmp_path: 
         candidates={"claude": [_candidate("AUDIT-CANDIDATE-001")]},
         decisions={"claude": "findings"},
     )
-    empty = _result(repo, run, [])
-    assert AUDIT.main([
-        "apply-synthesis", str(epic), str(attempt), "--run", str(run), "--result", str(empty)
-    ]) == 1
     source = "review:audit-001:claude:semantic_core:AUDIT-CANDIDATE-001"
-    proposal_result = _result(repo, run, [_proposal([source])], job_id="audit-synthesis-002")
     assert AUDIT.main([
-        "apply-synthesis", str(epic), str(attempt), "--run", str(run), "--result", str(proposal_result)
+        "apply-synthesis", str(epic), str(attempt), "--run", str(run)
     ]) == 0
     findings = yaml.safe_load((epic / "audit-findings.yaml").read_text(encoding="utf-8"))
     assert findings["findings"][0]["source_ids"] == [source]
@@ -708,13 +649,9 @@ def test_conservative_max_severity_and_conflicting_dispositions_block(tmp_path: 
         },
         decisions={"claude": "findings", "codex": "findings"},
     )
-    sources = [
-        "review:audit-001:claude:semantic_core:C-1",
-        "review:audit-001:codex:semantic_core:C-2",
-    ]
-    result = _result(repo, run, [_proposal(sources, severity="minor")])
+
     assert AUDIT.main([
-        "apply-synthesis", str(epic), str(attempt), "--run", str(run), "--result", str(result)
+        "apply-synthesis", str(epic), str(attempt), "--run", str(run)
     ]) == 0
     findings = yaml.safe_load((epic / "audit-findings.yaml").read_text(encoding="utf-8"))
     assert findings["findings"][0]["severity"] == "blocking"
@@ -731,9 +668,9 @@ def test_conservative_max_severity_and_conflicting_dispositions_block(tmp_path: 
         },
         decisions={"claude": "findings", "codex": "findings"},
     )
-    result2 = _result(repo2, run2, [_proposal(sources)])
+
     assert AUDIT.main([
-        "apply-synthesis", str(epic2), str(attempt2), "--run", str(run2), "--result", str(result2)
+        "apply-synthesis", str(epic2), str(attempt2), "--run", str(run2)
     ]) == 1
 
 
@@ -747,12 +684,13 @@ def test_accepted_risk_requires_explicit_current_authority(tmp_path: Path) -> No
         candidates={"claude": [_candidate("C-1")]},
         decisions={"claude": "findings"},
     )
-    source = "review:audit-001:claude:semantic_core:C-1"
-    result = _result(repo, run, [_proposal([source], disposition="accepted_risk")])
+
     command = [
-        "apply-synthesis", str(epic), str(attempt), "--run", str(run), "--result", str(result)
+        "apply-synthesis", str(epic), str(attempt), "--run", str(run)
     ]
-    assert AUDIT.main(command) == 1
+    assert AUDIT.main(command) == 0
+    findings = yaml.safe_load((epic / "audit-findings.yaml").read_text())
+    assert findings["findings"][0]["disposition"] == "remediation_required"
     assert AUDIT.main([
         "record-authority", str(epic), str(attempt), "--run", str(run),
         "--authority-id", "AUTH-RISK", "--kind", "accepted_risk",
@@ -770,9 +708,9 @@ def test_bare_question_and_unverified_evidence_block_final_pass(tmp_path: Path) 
         attempt = _prepare(epic, run)
         assert _record_pass(epic, attempt, run, epic / "proof.txt") == 0
         _receipt(repo, attempt, **receipt_kwargs)
-        result = _result(repo, run, [])
+
         assert AUDIT.main([
-            "apply-synthesis", str(epic), str(attempt), "--run", str(run), "--result", str(result)
+            "apply-synthesis", str(epic), str(attempt), "--run", str(run)
         ]) == 0
         assert AUDIT.main([
             "finalize", str(epic), str(attempt), "--run", str(run)
@@ -786,9 +724,9 @@ def test_clean_full_audit_passes_and_second_full_attempt_is_blocked(tmp_path: Pa
     attempt = _prepare(epic, run)
     assert _record_pass(epic, attempt, run, epic / "proof.txt") == 0
     _receipt(repo, attempt)
-    result = _result(repo, run, [])
+
     assert AUDIT.main([
-        "apply-synthesis", str(epic), str(attempt), "--run", str(run), "--result", str(result)
+        "apply-synthesis", str(epic), str(attempt), "--run", str(run)
     ]) == 0
     assert AUDIT.main(["finalize", str(epic), str(attempt), "--run", str(run)]) == 0
     assert AUDIT.main([
@@ -802,9 +740,9 @@ def test_post_synthesis_findings_tamper_blocks_finalization(tmp_path: Path) -> N
     attempt = _prepare(epic, run)
     assert _record_pass(epic, attempt, run, epic / "proof.txt") == 0
     _receipt(repo, attempt)
-    result = _result(repo, run, [])
+
     assert AUDIT.main([
-        "apply-synthesis", str(epic), str(attempt), "--run", str(run), "--result", str(result)
+        "apply-synthesis", str(epic), str(attempt), "--run", str(run)
     ]) == 0
     findings = yaml.safe_load((epic / "audit-findings.yaml").read_text(encoding="utf-8"))
     findings["tampered"] = True
@@ -921,10 +859,9 @@ def test_targeted_audit_packet_carries_snapshot_and_apply_rejects_drift(
     current = yaml.safe_load(findings_path.read_text(encoding="utf-8"))
     current["findings"][0]["title"] = "Drifted after audit preparation"
     _dump(findings_path, current)
-    result = _result(repo, run, [])
+
     assert AUDIT.main([
         "apply-synthesis", str(epic), str(attempt), "--run", str(run),
-        "--result", str(result),
     ]) == 1
     assert "targeted finding snapshot differs" in capsys.readouterr().err
 
@@ -959,10 +896,9 @@ def test_targeted_audit_verification_must_match_packet_identity(
     }
     verification[field] = value
     _receipt(repo, attempt, verifications={"codex": [verification]})
-    result = _result(repo, run, [])
+
     assert AUDIT.main([
         "apply-synthesis", str(epic), str(attempt), "--run", str(run),
-        "--result", str(result),
     ]) == 1
     assert message in capsys.readouterr().err
 
@@ -984,10 +920,9 @@ def test_targeted_audit_verification_accepts_exact_packet_identity(tmp_path: Pat
         "closure_test": finding["closure_test"],
     }
     _receipt(repo, attempt, verifications={"codex": [verification]})
-    result = _result(repo, run, [])
+
     assert AUDIT.main([
         "apply-synthesis", str(epic), str(attempt), "--run", str(run),
-        "--result", str(result),
     ]) == 0
     findings = yaml.safe_load(findings_path.read_text(encoding="utf-8"))
     assert findings["findings"][0]["status"] == "verified"

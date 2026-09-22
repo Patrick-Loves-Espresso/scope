@@ -178,12 +178,8 @@ def load_policy(path: Path) -> dict[str, Any]:
     workflows = _mapping(policy.get("workflows"), "reviewer policy workflows")
     providers = _mapping(policy.get("providers"), "reviewer policy providers")
     allowed_efforts = {"low", "medium", "high", "xhigh", "max"}
-    allowed_models = {
-        "codex": {"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"},
-        "claude": {"fable", "opus", "sonnet", "haiku"},
-        "agy": {"gemini-3.1-pro-high"},
-        "opencode": {"zai-coding-plan/glm-5.2"},
-    }
+    allowed_models = {provider: set(_string_list(values, f"allowed models for {provider}"))
+                      for provider, values in _mapping(policy.get("allowed_models"), "allowed_models").items()}
     for section in ("reviewers", "reviewers_on_budget"):
         profiles = _mapping(policy.get(section), f"reviewer policy {section}")
         for workflow, workflow_config in workflows.items():

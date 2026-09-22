@@ -86,6 +86,8 @@ echo   Created "%CLAUDE_DIR%\"
 echo   Created "%CODEX_DIR%\"
 
 rem Remove obsolete reviewer transports left by older Scope installations.
+call :delete_if_exists "%CLAUDE_DIR%\workers\audit-worker.md"
+call :delete_if_exists "%CODEX_DIR%\workers\audit-worker.md"
 call :delete_if_exists "%CLAUDE_DIR%\commands\scripts\scope-reviewer-tmux.sh"
 if errorlevel 1 goto :install_failed
 call :delete_if_exists "%CLAUDE_DIR%\commands\scripts\scope-reviewer-claude-pexpect.py"

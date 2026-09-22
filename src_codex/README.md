@@ -24,7 +24,7 @@ file in `agents/`, and preserve its product-contract, material-decision, and
 final-handoff authority boundaries.
 
 An implementation command resolves `plugins/scope/` before creating or resuming
-`worktree/{epic-id}` and retains that absolute installation path. Git does not copy
+`wip/{epic-id}` and retains that absolute installation path. Git does not copy
 ignored plugin files into a linked worktree. A new command started directly in
 a worktree must have its own installation rather than silently selecting an
 unrelated checkout.

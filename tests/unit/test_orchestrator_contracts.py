@@ -56,8 +56,6 @@ def test_public_workflows_use_the_small_worker_lifecycle(path: Path) -> None:
         "status",
         "recover",
         "cancel",
-        "preflight --provider",
-        '"$WORKER" run',
     )
     for removed in (
         " operate ",
@@ -81,8 +79,8 @@ def test_refinement_has_two_authority_gates_and_one_review_boundary() -> None:
         "one full immutable packet",
         "targeted packet",
         "only independent targeted evidence",
-        "documentation_obligations",
-        "exactly one implementation story",
+        "documentation obligations",
+        "one manifest row",
         "validate --phase handoff",
     )
     assert "Gate 0" not in command
@@ -164,16 +162,16 @@ def test_implementation_uses_bounded_story_workers_and_safe_dependency_merge(
     command = read(path)
     require(
         command,
-        "worktree/{epic-id}",
+        "wip/{epic-id}",
         "scope-dependency-merge.py",
         "It accepts no branch tip",
-        "never concurrently",
+        "one writer at a time",
         "required_proof_ids",
         "durable implementation evidence",
-        "implementation/epic_verify",
+        "verify-proofs",
         "implementation/audit_remediation",
         "same worker/reviewer profiles",
-        "documentation_obligations",
+        "documentation obligation",
         "scope-wrap-finalize.py",
         '"$WRAP_FINALIZER" seal',
         "Do not commit implementation/remediation",
@@ -220,7 +218,7 @@ def test_wrap_is_one_shared_lean_deterministic_command() -> None:
 def test_manifest_v2_templates_expose_documentation_obligations() -> None:
     manifest = read(DELIVERY_MANIFEST_TEMPLATE)
     design = read(DESIGN_TEMPLATE)
-    require(manifest, "schema_version: 2", "documentation_obligations: []")
+    require(manifest, "schema_version: 3", "documentation_obligations: []", "execution:", "depends_on: []")
     require(design, "## Documentation Obligations", "DOC-NNN")
 
 
@@ -241,9 +239,9 @@ def test_standalone_developer_roles_are_small_platform_mirrors() -> None:
     claude_path = ROOT / "src_claude/agents/developer.md"
     codex = read(codex_path)
     claude = read(claude_path)
-    assert "model: gpt-5.6-terra" in codex
+    assert "model: gpt-6-astra" in codex
     assert "model_reasoning_effort: max" in codex
-    assert "model: sonnet" in claude
+    assert "model: claude-fable-5-1" in claude
     assert normalize_developer(codex) == normalize_developer(claude)
     require(codex, "standalone bounded developer role", "at most four times")
     for removed in (
@@ -284,7 +282,6 @@ def test_worker_prompts_stay_bounded_and_non_conversational() -> None:
     for name in (
         "refinement-worker.md",
         "implementation-worker.md",
-        "audit-worker.md",
         "diagnostic-worker.md",
     ):
         prompt = read(ROOT / "src_shared/workers" / name)

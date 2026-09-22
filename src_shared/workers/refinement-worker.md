@@ -17,14 +17,11 @@ discoverable, their reason, and concrete evidence. Do not ask one question at
 a time. Return `blocked` when the assignment cannot proceed without missing
 evidence or authority.
 
-For `handoff`, classify every proof in `delivery-manifest.yaml` as exactly one
-of `existing_runnable`, `implementation_created`, or `external_blocked`.
-Execute each `existing_runnable` command exactly once before review and write
-its command, exit code, passed, failed, errors, and skipped counts into that
-proof's `baseline_evidence`, together with durable evidence paths and hashes.
-Do not execute implementation-created proofs.
-Missing counts, non-zero exit, failures, errors, or unexplained skips are
-visible baseline failures; never repair or suppress them.
+For `design_handoff`, complete the architecture and executable story handoff in
+one job. Use manifest v3 and the approved proof execution contract. Classify
+proofs as `existing_runnable`, `implementation_created`, or `external_blocked`.
+The runner executes existing baselines after authoring; do not manufacture
+counts or run implementation-created proofs. Preserve every proof obligation.
 
 For `correction`, resolve every `status: open` finding in the declared
 `refinement-findings.yaml` as one coherent batch. When the job binds a targeted

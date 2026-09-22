@@ -6,6 +6,11 @@ args: "{epic-id}"
 
 # epic_refine
 
+For this orchestration-only session, prefer `gpt-5.6-sol` at high effort in
+Codex or `claude-opus-5` at high effort in Claude. The host session selects its
+own model; worker/reviewer policies do not switch it. Respect an explicit user
+model choice and do not interrupt an active workflow solely to change models.
+
 You are the sole user-facing orchestrator. Fresh workers author one bounded
 phase at a time; independent reviewers are read-only. Do not author or
 semantically review epic artifacts in this session.
@@ -91,12 +96,9 @@ No worker write scope may include `refinement-state.yaml`, a review packet, a
 reviewer receipt, or an audit attempt. Those are deterministic-tool outputs.
 Use exact artifact paths, not the whole epic directory, for every write phase.
 
-Before each phase, preflight and then launch a fresh worker:
+Launch a fresh worker for each authoring phase; `run` preflights internally:
 
 ```bash
-"$PYTHON_CMD" "$WORKER" preflight --provider "$PROVIDER" \
-  --role refinement --phase "$PHASE" --worker-profile "$WORKER_PROFILE" \
-  --scope-root "$SCOPE_ROOT"
 "$PYTHON_CMD" "$WORKER" run --provider "$PROVIDER" \
   --role refinement --job "$JOB_PATH" --result "$RESULT_PATH" \
   --cwd "$WORKING_ROOT" --access workspace-write \
@@ -137,32 +139,35 @@ out-of-scope writes, and ambiguous concurrent edits stop sequencing.
      --source "$AUTHORITY_SOURCE" --decision approved
    ```
 
-2. **Design.** A `refinement/design` worker receives the approved product
-   boundary and authors only architecture, contracts, failure behavior, story
-   boundaries, ownership, proof strategy, and material documentation
-   requirements. Each documentation obligation has a stable `### DOC-NNN`
-   design heading plus one manifest row whose `requirement_ref` contains that ID
-   and names its future repository-relative target. Do not update the target document during refinement: its implemented
-   content is expected to change after handoff. No universal architecture gate
-   follows; stop only for a material decision or boundary change.
+2. **Design and handoff.** One `refinement/design_handoff` worker receives
+   the approved product contract and authors architecture, native contracts,
+   failure behavior, story plans, proof strategy, and documentation obligations.
+   Keep the smallest coherent story set. Each obligation has a `### DOC-NNN`
+   design heading and one manifest row with its owner story, future target, and
+   `requirement_ref`. Implement the target during its story group, not refinement.
 
-3. **Handoff.** A `refinement/handoff` worker completes the smallest coherent
-   `file-plan-story-*.yaml` set and delivery-manifest references. It classifies
-   every proof as `existing_runnable`, `implementation_created`, or
-   `external_blocked`. It executes each existing runnable command exactly once
-   without a shell wrapper and records real exit/pass/fail/error/skip counts and
-   evidence hashes inline in `delivery-manifest.yaml`. It does not execute
-   implementation-created proofs. It assigns every documentation obligation to
-   exactly one implementation story and preserves its `requirement_ref`; the
-   target becomes a binding write obligation of that story, not wrap-up work.
-   Only the manifest declaration is handoff-bound—do not add expected-to-change
-   target content to the final-handoff artifact hashes. Run `validate --phase product` again to
-   detect a stale product boundary. The following `create-review-packet`
-   operation performs the full pre-review story/proof structural gate while
-   omitting only requirements that can exist after review; neither check
-   pretends to judge prose quality.
+   New manifests use schema v3. Every story lists `depends_on`. Every executable
+   proof declares its direct `execution.argv`, relative `cwd`, result `parser`,
+   approved environment variable names, and explicit `fresh` boolean. `command`
+   is the display form of argv (`shlex.join`). Classify proofs as
+   `existing_runnable`, `implementation_created`, or `external_blocked`.
+   Use `pytest` for pytest counts, `scope-json` for a project command emitting
+   exactly one `SCOPE_RESULT {"passed":1,"failed":0,"errors":0,"skipped":0}` line,
+   and `exit-code` only for approved non-test checks. External/stateful commands
+   require `fresh: true`. Do not weaken existing proof obligations to reduce time.
 
-4. **Independent review.** Create one full immutable packet, then let the
+   Execute existing runnable baselines through the runner, preserving failures:
+
+   ```bash
+   "$PYTHON_CMD" "$REFINEMENT" baseline-proofs "$EPIC_DIR" --run "$RUN"
+   ```
+
+   Implementation-created proofs are not run yet. The executor writes baseline
+   evidence into the manifest. Run `validate --phase product` again; packet
+   creation checks story/proof structure. Only manifest declarations are handoff
+   bound; do not bind expected-to-change implementation documentation content.
+
+3. **Independent review.** Create one full immutable packet, then let the
    reviewer runner preflight every assignment as one all-provider barrier,
    launch them concurrently, and publish one receipt:
 
@@ -186,20 +191,33 @@ out-of-scope writes, and ambiguous concurrent edits stop sequencing.
    incompatibility is a replaced reviewer template, leave that receipt in
    place; `create-review-packet` may issue the next same-kind attempt.
 
-5. **Correction.** Give one `refinement/correction` worker the complete open
+4. **Correction.** Give one `refinement/correction` worker the complete open
    batch. It updates only affected canonical artifacts and stores closure
    commands, counts, affected paths, hashes, and source candidate IDs inline in
    `refinement-findings.yaml`; permanent state never depends on `tmp_debug`.
-   For corrected fingerprints, create one targeted packet by repeating
+   If a correction changes an existing runnable proof command, rerun
+   `baseline-proofs` before review. For corrected fingerprints, create one targeted packet by repeating
    `--target-fingerprint <fingerprint>`, run the original required reviewers,
    and apply the receipt. Only independent targeted evidence may change
    `corrected` to `verified`. Accepted risk requires a separate hash-bound
    `record-authority --kind accepted_risk --subject <fingerprint>` row.
 
-6. **Finalize.** When `validate --phase review` passes, a
-   `refinement/finalize` worker writes the evidence summary in
-   `refinement-review.md` without changing the reviewed product/design/story
-   boundary. Obtain or consume final-handoff approval and record it:
+   Minor means a concrete low-risk defect. Fix minors after the first full
+   review and again after the second completed review when still open. After
+   the third completed review, the applier marks remaining minors `deferred`:
+   optional and visible at final approval, never verified. Infrastructure retries
+   do not advance this count. Major/blocking findings remain mandatory. Optional
+   polish belongs in Suggestions, outside parsed Findings. Targeted reviews
+   introduce no new candidates.
+
+5. **Finalize.** When `validate --phase review` passes, render the summary:
+
+   ```bash
+   "$PYTHON_CMD" "$REFINEMENT" render-summary "$EPIC_DIR" --run "$RUN"
+   ```
+
+   Present any deferred minors at the existing final-handoff gate. Obtain or
+   consume approval and record it:
 
    ```bash
    "$PYTHON_CMD" "$REFINEMENT" record-authority "$EPIC_DIR" --run "$RUN" \

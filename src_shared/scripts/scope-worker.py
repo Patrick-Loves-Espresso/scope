@@ -4,10 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import signal
 import shutil
@@ -27,6 +28,7 @@ SCRIPT_DIRECTORY = str(Path(__file__).resolve().parent)
 if SCRIPT_DIRECTORY not in sys.path:
     sys.path.insert(0, SCRIPT_DIRECTORY)
 import scope_codegraph  # noqa: E402
+import scope_proofs  # noqa: E402
 
 
 SCHEMA_VERSION = 2
@@ -34,27 +36,22 @@ IMPLEMENTATION_EVIDENCE_VERSION = 2
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 WORKER_PROFILES = {"default": "workers", "budget": "workers_on_budget"}
 ROLE_PHASES = {
-    "refinement": {"product", "design", "handoff", "correction", "finalize"},
+    "refinement": {"product", "design_handoff", "correction"},
     "implementation": {
         "story",
-        "epic_verify",
         "audit_remediation",
         "debugging",
-        "delivery_summary",
     },
-    "audit": {"merge_findings"},
     "diagnostic": {"investigate"},
 }
 ROLE_COMMANDS = {
     "refinement": {"epic_refine"},
     "implementation": {"implement"},
-    "audit": {"epic_refine", "implement", "audit_epic"},
     "diagnostic": {"epic_refine", "implement", "audit_epic"},
 }
 ROLE_PROMPTS = {
     "refinement": "refinement-worker.md",
     "implementation": "implementation-worker.md",
-    "audit": "audit-worker.md",
     "diagnostic": "diagnostic-worker.md",
 }
 JOB_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
@@ -231,6 +228,8 @@ def _canonical_file_parent(value: Any, field: str) -> Path:
         parent = path.parent.resolve(strict=True)
     except OSError as exc:
         raise ContractError(f"{field} parent cannot be resolved: {value}: {exc}") from exc
+    if not parent.is_dir():
+        raise ContractError(f"{field} parent is not a directory: {parent}")
     return parent / path.name
 
 
@@ -749,6 +748,15 @@ def _git_ignored_paths(working_root: Path, paths: Sequence[str]) -> list[str]:
     )
 
 
+def _is_safe_ignored_test_artifact(relative: str) -> bool:
+    """Return whether an ignored path is a known nondeliverable test artifact."""
+    parts = PurePosixPath(relative).parts
+    if "__pycache__" in parts or ".pytest_cache" in parts:
+        return True
+    name = parts[-1] if parts else ""
+    return name == ".coverage" or name.startswith(".coverage.")
+
+
 def _index_entries(working_root: Path) -> dict[str, str]:
     entries: dict[str, list[str]] = {}
     for raw in _git_bytes(working_root, ["ls-files", "--stage", "-z"]).split(b"\0"):
@@ -1072,6 +1080,16 @@ def codex_output_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
     return projected
 
 
+def claude_output_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
+    """Project the contract onto Claude CLI/API's supported schema subset."""
+    projected = json.loads(json.dumps(schema))
+    projected.pop("$schema", None)
+    # Anthropic rejects top-level allOf. Its conditional status rules (including
+    # the untyped array constraints) remain enforced by validate_result locally.
+    projected.pop("allOf", None)
+    return projected
+
+
 def _claude_tools(job: Mapping[str, Any], access: str, codegraph: Mapping[str, Any]) -> tuple[str, str, str]:
     tools = ["Read", "Glob", "Grep"]
     allowed = list(tools)
@@ -1081,7 +1099,7 @@ def _claude_tools(job: Mapping[str, Any], access: str, codegraph: Mapping[str, A
             patterns = ["**"] if scope == "." else [scope, f"{scope.rstrip('/')}/**"]
             for pattern in patterns:
                 allowed.extend((f"Write({pattern})", f"Edit({pattern})"))
-    commands = [row["command"] for row in job["required_validations"]]
+    commands = list(dict.fromkeys([row["command"] for row in job["required_validations"]] + job.get("allowed_commands", [])))
     if commands:
         tools.append("Bash")
         allowed.extend(f"Bash({command})" for command in commands)
@@ -1139,7 +1157,7 @@ def build_claude_command(
         "--output-format",
         "json",
         "--json-schema",
-        json.dumps(result_schema, separators=(",", ":")),
+        json.dumps(claude_output_schema(result_schema), separators=(",", ":")),
     ]
 
 
@@ -1320,8 +1338,9 @@ def validate_result(result: Mapping[str, Any], job: Mapping[str, Any], schema: M
             raise ContractError(f"duplicate validation result: {row['command']}")
         validations[row["command"]] = row
     required = {row["command"] for row in job["required_validations"]}
-    if set(validations) - required:
-        raise ContractError(f"undeclared validation results: {sorted(set(validations) - required)}")
+    allowed = required | set(job.get("allowed_commands", []))
+    if set(validations) - allowed:
+        raise ContractError(f"undeclared validation results: {sorted(set(validations) - allowed)}")
     if result["status"] == "completed":
         missing = required - set(validations)
         if missing:
@@ -1331,7 +1350,13 @@ def validate_result(result: Mapping[str, Any], job: Mapping[str, Any], schema: M
             raise ContractError(f"completed result has failed validations: {failed}")
         if any(row["severity"] == "blocking" for row in result["issues"]):
             raise ContractError("completed result has a blocking issue")
-    if job["role"] == "implementation" and result["status"] == "completed":
+    executor_owned = False
+    if job["role"] == "implementation":
+        _, manifest = _manifest_for_implementation_job(job, Path(job["working_root"]))
+        executor_owned = manifest.get("schema_version") == 3
+        if executor_owned and result["payload"]["proof_evidence"]:
+            raise ContractError("manifest v3 proof_evidence is runner-owned; workers return an empty array")
+    if job["role"] == "implementation" and result["status"] == "completed" and not executor_owned:
         proof_ids: set[str] = set()
         for proof in result["payload"]["proof_evidence"]:
             if proof["proof_id"] in proof_ids:
@@ -1366,6 +1391,7 @@ def validate_result(result: Mapping[str, Any], job: Mapping[str, Any], schema: M
     if (
         job["role"] == "implementation"
         and result["status"] != "completed"
+        and not executor_owned
         and changed
     ):
         raise ContractError(
@@ -1388,10 +1414,6 @@ def validate_result(result: Mapping[str, Any], job: Mapping[str, Any], schema: M
         reported_decisions = set(result["payload"]["decision_refs"])
         if not reported_decisions <= job_decisions:
             raise ContractError("refinement result cites decisions absent from the job")
-    if job["role"] == "audit":
-        for finding in result["payload"]["findings"]:
-            for index, path in enumerate(finding["affected_paths"]):
-                normalize_relative_path(path, f"audit finding affected_paths[{index}]")
 
 
 def _validate_decision_refs_current(job: Mapping[str, Any]) -> None:
@@ -1589,6 +1611,7 @@ def _attribution_hash(evidence: Mapping[str, Any]) -> str:
             "validated_jobs": evidence.get("validated_jobs"),
             "attributed_delta": evidence.get("attributed_delta"),
             "stories": evidence.get("stories"),
+            **({"proof_checkpoint": evidence["proof_checkpoint"]} if "proof_checkpoint" in evidence else {}),
             "validated_workspace_sha256": evidence.get(
                 "validated_workspace_sha256"
             ),
@@ -1602,7 +1625,9 @@ def _workspace_snapshot_sha256(
     epic_relative = Path(evidence_relative).parent.as_posix()
 
     def included(relative: str) -> bool:
-        if relative == evidence_relative:
+        if _is_safe_ignored_test_artifact(relative):
+            return False
+        if relative in {evidence_relative, f"{epic_relative}/reviews/proofs"}:
             return False
         if relative in {"tmp_debug", ".codegraph"}:
             return False
@@ -1613,7 +1638,7 @@ def _workspace_snapshot_sha256(
             f"{epic_relative}/epic_audit.md",
         }:
             return False
-        return not relative.startswith(f"{epic_relative}/reviews/audit-")
+        return not relative.startswith((f"{epic_relative}/reviews/audit-", f"{epic_relative}/reviews/proofs/"))
 
     entries = [
         dict(row)
@@ -1710,6 +1735,7 @@ def promote_implementation_evidence(
     before: Mapping[str, Any],
     after: Mapping[str, Any],
     result_sha256: str,
+    checkpoint: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Atomically promote runner-observed implementation changes into durable evidence."""
     if job.get("role") != "implementation" or job.get("phase") == "delivery_summary":
@@ -1724,7 +1750,7 @@ def promote_implementation_evidence(
         evidence_path, job, working_root, before
     )
     proof_rows: list[dict[str, Any]] = []
-    for proof in result["payload"]["proof_evidence"]:
+    for proof in (checkpoint["proofs"] if checkpoint is not None else result["payload"]["proof_evidence"]):
         proof_id = str(proof["proof_id"])
         planned = proof_by_id.get(proof_id)
         story_id = owner_by_proof.get(proof_id)
@@ -1737,19 +1763,21 @@ def promote_implementation_evidence(
                 "proof_id": proof_id,
                 "story_id": story_id,
                 "command": proof["command"],
-                "outcome": "pass",
+                "outcome": proof.get("outcome", "pass"),
                 "exit_code": proof["exit_code"],
                 "passed": proof["passed"],
                 "failed": proof["failed"],
                 "errors": proof["errors"],
                 "skipped": proof["skipped"],
                 "summary": (
+                    proof["summary"] if checkpoint is not None else
                     f"{proof['passed']} passed, {proof['failed']} failed, "
                     f"{proof['errors']} errors, {proof['skipped']} skipped"
                 ),
-                "evidence_hashes": {
+                "evidence_hashes": proof["evidence_hashes"] if checkpoint is not None else {
                     proof["evidence_path"]: proof["evidence_sha256"]
                 },
+                **({"context": proof["context"]} if checkpoint is not None else {}),
                 "source_job_id": job["job_id"],
                 "source_result_sha256": result_sha256,
             }
@@ -1792,6 +1820,14 @@ def promote_implementation_evidence(
     for manifest_story in manifest_stories:
         story_id = str(manifest_story["id"])
         planned_ids = [str(value) for value in manifest_story.get("proof_ids", [])]
+        external_blocked_ids = [
+            proof_id
+            for proof_id in planned_ids
+            if proof_by_id[proof_id].get("classification") == "external_blocked"
+        ]
+        executable_ids = [
+            proof_id for proof_id in planned_ids if proof_id not in external_blocked_ids
+        ]
         prior = prior_stories.get(story_id, {})
         prior_proofs = {
             row.get("proof_id"): dict(row)
@@ -1805,15 +1841,22 @@ def promote_implementation_evidence(
                 if proof_id in promoted_by_id
             }
         )
-        ordered = [prior_proofs[proof_id] for proof_id in planned_ids if proof_id in prior_proofs]
+        ordered = [
+            prior_proofs[proof_id]
+            for proof_id in executable_ids
+            if proof_id in prior_proofs
+        ]
         stories.append(
             {
                 "story_id": story_id,
-                "status": "verified" if len(ordered) == len(planned_ids) else "pending",
+                "status": "verified" if len(ordered) == len(executable_ids) and all(row.get("outcome") == "pass" for row in ordered) else "pending",
                 "proofs": ordered,
+                "external_blocked_proof_ids": external_blocked_ids,
             }
         )
     evidence["stories"] = stories
+    if checkpoint is not None:
+        evidence["proof_checkpoint"] = {key: checkpoint[key] for key in ("path", "sha256", "status", "duration_seconds")}
     evidence["attributed_delta"] = _attributed_delta(validated_jobs)
     evidence["validated_workspace_sha256"] = _workspace_snapshot_sha256(
         after, str(job["implementation_evidence_path"])
@@ -1931,7 +1974,7 @@ def verify_implementation_attribution(epic_dir: Path, working_root: Path) -> lis
             if path not in excluded
             and path != "tmp_debug"
             and not path.startswith("tmp_debug/")
-            and not path.startswith(f"{epic_relative}/reviews/audit-")
+            and not path.startswith((f"{epic_relative}/reviews/audit-", f"{epic_relative}/reviews/proofs/"))
         }
         expected_git_paths = {
             str(row["path"])
@@ -1956,6 +1999,14 @@ def verify_implementation_attribution(epic_dir: Path, working_root: Path) -> lis
         for manifest_story in manifest_stories:
             story_id = str(manifest_story["id"])
             planned_ids = [str(value) for value in manifest_story.get("proof_ids", [])]
+            external_blocked_ids = [
+                proof_id
+                for proof_id in planned_ids
+                if proof_by_id[proof_id].get("classification") == "external_blocked"
+            ]
+            executable_ids = [
+                proof_id for proof_id in planned_ids if proof_id not in external_blocked_ids
+            ]
             story = stories_by_id.get(story_id)
             if not isinstance(story, Mapping) or story.get("status") != "verified":
                 errors.append(f"implementation evidence story is not verified: {story_id}")
@@ -1969,10 +2020,14 @@ def verify_implementation_attribution(epic_dir: Path, working_root: Path) -> lis
                 for row in rows
                 if isinstance(row, Mapping)
             }
-            if set(by_id) != set(planned_ids):
+            if story.get("external_blocked_proof_ids", []) != external_blocked_ids:
+                errors.append(
+                    f"implementation external-blocked proof set differs from the manifest: {story_id}"
+                )
+            if set(by_id) != set(executable_ids):
                 errors.append(f"implementation proof set differs from the manifest: {story_id}")
                 continue
-            for proof_id in planned_ids:
+            for proof_id in executable_ids:
                 proof = by_id[proof_id]
                 planned = proof_by_id[proof_id]
                 source_job = jobs_by_id.get(str(proof.get("source_job_id")))
@@ -1986,6 +2041,13 @@ def verify_implementation_attribution(epic_dir: Path, working_root: Path) -> lis
                     errors.append(f"implementation proof has the wrong story owner: {proof_id}")
                 if isinstance(planned.get("command"), str) and proof.get("command") != planned.get("command"):
                     errors.append(f"implementation proof command differs from the plan: {proof_id}")
+                if manifest.get("schema_version") == 3:
+                    try:
+                        identity, _ = scope_proofs.context(planned, root, selected_epic, scope_proofs.policy())
+                        if not scope_proofs.valid_record(proof, root, identity):
+                            errors.append(f"implementation proof is stale or failed at final workspace: {proof_id}")
+                    except (ValueError, OSError) as exc:
+                        errors.append(f"invalid execution context for {proof_id}: {exc}")
                 hashes = proof.get("evidence_hashes")
                 if not isinstance(hashes, Mapping) or not hashes:
                     errors.append(f"implementation proof evidence hashes are missing: {proof_id}")
@@ -2029,6 +2091,18 @@ def _finalize_result(
                 raise ContractError(
                     "implementation evidence promotion requires both snapshots"
                 )
+            _, manifest = _manifest_for_implementation_job(job, Path(job["working_root"]))
+            checkpoint = None
+            if manifest.get("schema_version") == 3:
+                selected = [row for row in manifest["proofs"] if row["id"] in job["required_proof_ids"]]
+                if {row["id"] for row in selected} != set(job["required_proof_ids"]):
+                    raise ContractError("unknown required proof ID")
+                checkpoint = scope_proofs.execute(scope_proofs.executable(selected), Path(job["working_root"]),
+                    (Path(job["working_root"]) / job["implementation_evidence_path"]).parent,
+                    scope_proofs.policy(Path(job["scope_root"])), cancellation=Path(active["cancellation_path"]) if active.get("cancellation_path") else None)
+                if any("proof changed its source" in row["summary"] for row in checkpoint["proofs"]):
+                    raise ContractError("proof mutated deliverable source; changes retained but cannot be attributed to the author")
+                after_snapshot = capture_snapshot(Path(job["working_root"]))
             promote_implementation_evidence(
                 job,
                 result,
@@ -2036,10 +2110,11 @@ def _finalize_result(
                 before_snapshot,
                 after_snapshot,
                 result_sha256,
+                checkpoint,
             )
-    except WorkerError:
+    except (WorkerError, ValueError, OSError) as exc:
         result_path.unlink(missing_ok=True)
-        raise
+        raise ContractError(str(exc)) from exc
     row = {
         "job_id": job["job_id"],
         "phase": job["phase"],
@@ -2055,6 +2130,10 @@ def _finalize_result(
         "started_at": active["started_at"],
         "completed_at": utc_now(),
     }
+    if job["role"] == "implementation" and job["phase"] != "delivery_summary" and result["status"] == "completed" and checkpoint is not None:
+        row["checkpoint"] = {key: checkpoint[key] for key in ("path", "sha256", "status", "duration_seconds")}
+        if checkpoint["status"] != "pass":
+            row["status"] = "verification_failed"
     after_snapshot_path = active.get("after_snapshot")
     if isinstance(after_snapshot_path, str) and Path(after_snapshot_path).is_file():
         row["after_snapshot_sha256"] = _sha256_file(Path(after_snapshot_path))
@@ -2134,13 +2213,23 @@ def _validate_attribution(
         raise ContractError(
             f"worker changed runner-owned implementation evidence: {evidence_path}"
         )
+    if isinstance(evidence_path, str):
+        proof_prefix = f"{Path(evidence_path).parent.as_posix()}/reviews/proofs"
+        if any(path == proof_prefix or path.startswith(proof_prefix + "/") for path in actual):
+            raise ContractError("worker changed runner-owned proof evidence")
     if job.get("role") == "implementation":
         ignored = _git_ignored_paths(Path(str(job["working_root"])), actual)
-        if ignored:
+        unsafe_ignored = [path for path in ignored if not _is_safe_ignored_test_artifact(path)]
+        if unsafe_ignored:
             raise ContractError(
-                f"implementation worker changed ignored paths that cannot be delivered: {ignored}"
+                "implementation worker changed ignored paths that cannot be delivered: "
+                f"{unsafe_ignored}"
             )
-    declared = sorted(result["changed_paths"])
+        safe_ignored = {path for path in ignored if _is_safe_ignored_test_artifact(path)}
+        actual = [path for path in actual if path not in safe_ignored]
+    else:
+        safe_ignored = set()
+    declared = sorted(path for path in result["changed_paths"] if path not in safe_ignored)
     if declared != actual:
         raise ContractError(f"declared changed paths do not match actual paths; declared={declared}, actual={actual}")
     outside = [path for path in actual if not _path_in_scope(path, job["write_scope"])]
@@ -2176,6 +2265,33 @@ def run_worker(args: argparse.Namespace) -> int:
     expected_access = "workspace-write" if job["write_scope"] else "read-only"
     if args.access != expected_access:
         raise ContractError(f"job requires --access {expected_access}")
+    if job["role"] == "implementation":
+        _, manifest = _manifest_for_implementation_job(job, working_root)
+        if manifest.get("schema_version") == 3:
+            if job["phase"] in {"epic_verify", "delivery_summary"}:
+                raise ContractError("manifest v3 uses deterministic proof and summary commands")
+            if job["phase"] == "story":
+                groups = scope_proofs.groups(manifest, scope_proofs.policy(scope_root)["maximum_stories_per_group"])
+                if job.get("story_ids") not in groups:
+                    raise ContractError("story_ids must match one dependency-connected story group")
+                expected = {proof_id for row in manifest["stories"] if row["id"] in job["story_ids"] for proof_id in row["proof_ids"]}
+                if set(job["required_proof_ids"]) != expected:
+                    raise ContractError("story group must include the exact union of its proof IDs")
+                evidence_path = working_root / job["implementation_evidence_path"]
+                evidence = load_yaml(evidence_path, "implementation evidence") if evidence_path.is_file() else {}
+                verified = {row["story_id"] for row in evidence.get("stories", []) if row.get("status") == "verified"}
+                pending = next((group for group in groups if not set(group) <= verified), None)
+                if job["story_ids"] != pending:
+                    raise ContractError("story group is not the first incomplete dependency-ready group")
+            if job["phase"] == "debugging":
+                evidence = load_yaml(working_root / job["implementation_evidence_path"], "implementation evidence")
+                checkpoint = evidence.get("proof_checkpoint", {})
+                receipt_path = working_root / checkpoint.get("path", "")
+                if checkpoint.get("status") != "fail" or not receipt_path.is_file() or _sha256_file(receipt_path) != checkpoint.get("sha256"):
+                    raise ContractError("debugging requires a current failed runner proof checkpoint")
+                receipt = load_json(receipt_path, "proof checkpoint")
+                if set(job["required_proof_ids"]) != {row["proof_id"] for row in receipt["proofs"]}:
+                    raise ContractError("debugging must rerun the complete failed checkpoint proof set")
     policy = load_policy(scope_root)
     selected = _provider_policy(policy, job["role"], job["phase"], args.provider, args.worker_profile)
     provider = provider_preflight(args.provider, selected)
@@ -2310,6 +2426,12 @@ def run_worker(args: argparse.Namespace) -> int:
             "provider_process_group": None,
             "provider_descendants": [],
         }
+        if job["role"] == "implementation" and job["phase"] == "debugging":
+            used = int(run.get("pre_audit_debugging_jobs", 0))
+            maximum = scope_proofs.policy(scope_root)["maximum_pre_audit_debugging_jobs"]
+            if used >= maximum:
+                raise ContractError(f"pre-audit debugging budget exhausted ({maximum}); changes retained")
+            run["pre_audit_debugging_jobs"] = used + 1
         run["active_job"] = active
         _write_run(run_path, run)
         state_guard.release()
@@ -2380,7 +2502,7 @@ def run_worker(args: argparse.Namespace) -> int:
             _interrupt(run_path, run, str(exc), actual)
             raise
         print(json.dumps(row, sort_keys=True))
-        return 0
+        return 1 if row["status"] == "verification_failed" else 0
     finally:
         if state_locked:
             state_guard.release()
@@ -2649,9 +2771,72 @@ def init_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def story_groups(args: argparse.Namespace) -> int:
+    manifest = load_yaml(args.epic_dir / "delivery-manifest.yaml", "delivery manifest")
+    print(json.dumps(scope_proofs.groups(manifest, scope_proofs.policy(args.scope_root)["maximum_stories_per_group"])))
+    return 0
+
+
+def verify_proofs(args: argparse.Namespace) -> int:
+    run_path = args.run.resolve(strict=True)
+    run, repository_root, root = _load_run(run_path)
+    if run["command"] != "implement" or run["active_job"] is not None:
+        raise ContractError("verify-proofs requires an idle implement run")
+    epic = args.epic_dir.resolve(strict=True)
+    if epic.parent != root / "docs/epics":
+        raise ContractError("epic must be a direct working-root epic directory")
+    scope_root = Path(run["scope_root"])
+    manifest_path = epic / "delivery-manifest.yaml"
+    manifest = load_yaml(manifest_path, "delivery manifest")
+    if manifest.get("schema_version") != 3:
+        raise ContractError("this proof executor requires a newly approved manifest v3; use the pinned Scope version for an older epic")
+    spec = importlib.util.spec_from_file_location("proof_handoff_validator", Path(__file__).with_name("validate-refinement.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    with FileLock(str(_validated_state_lock_path(run_path, repository_root)), timeout=0), FileLock(str(_validated_mutation_lock_path(root)), timeout=0):
+        run, _, _ = _load_run(run_path)
+        if run["active_job"] is not None:
+            raise ActiveWorkerError("implementation run became active")
+        _ensure_no_cross_run_active(repository_root, root, run_path)
+        errors = module.RefinementValidator(epic, "handoff", repo_root=root).validate()
+        if errors:
+            raise ContractError("invalid approved handoff: " + "; ".join(errors))
+        evidence_relative = (epic / "implementation-evidence.yaml").relative_to(root).as_posix()
+        job = {"job_id": "proofs-" + str(time.time_ns()), "role": "implementation", "phase": "proof_checkpoint",
+               "epic_id": manifest["epic_id"], "working_root": str(root),
+               "implementation_evidence_path": evidence_relative,
+               "artifacts": [{"path": manifest_path.relative_to(root).as_posix(), "sha256": _sha256_file(manifest_path)}]}
+        if manifest["epic_id"] != run["epic_id"]:
+            raise ContractError("proof epic differs from run")
+        before = capture_snapshot(root)
+        _validate_implementation_workspace_continuity(job, before)
+        checkpoint = scope_proofs.execute(
+            scope_proofs.executable(manifest["proofs"]),
+            root,
+            epic,
+            scope_proofs.policy(scope_root),
+        )
+        result = {"status": "completed", "payload": {"proof_evidence": []}}
+        if any("proof changed its source" in row["summary"] for row in checkpoint["proofs"]):
+            raise ContractError("proof mutated source; stop and attribute changes before retrying")
+        promote_implementation_evidence(job, result, [], before, capture_snapshot(root), checkpoint["sha256"], checkpoint)
+        run["last_proof_checkpoint"] = {key: checkpoint[key] for key in ("path", "sha256", "status", "duration_seconds")}
+        _write_run(run_path, run)
+    print(json.dumps(run["last_proof_checkpoint"], sort_keys=True))
+    return 0 if checkpoint["status"] == "pass" else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="subcommand", required=True)
+    proofs_parser = commands.add_parser("verify-proofs", help="Execute the complete approved epic proof set")
+    proofs_parser.add_argument("epic_dir", type=Path)
+    proofs_parser.add_argument("--run", type=Path, required=True)
+    proofs_parser.set_defaults(handler=verify_proofs)
+    groups_parser = commands.add_parser("story-groups", help="Show dependency-connected implementation groups")
+    groups_parser.add_argument("epic_dir", type=Path)
+    groups_parser.add_argument("--scope-root", type=Path, default=Path(__file__).resolve().parent.parent)
+    groups_parser.set_defaults(handler=story_groups)
     preflight_parser = commands.add_parser("preflight")
     preflight_parser.add_argument("--provider", choices=("codex", "claude"), required=True)
     preflight_parser.add_argument("--role", choices=tuple(ROLE_PHASES), required=True)

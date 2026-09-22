@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 epic_id: EPIC-ID
 risk_level: medium
 capabilities: []
@@ -23,6 +23,7 @@ decisions: []
 documentation_obligations: []
 stories:
   - id: story-01
+    depends_on: []
     plan_path: file-plan-story-01.yaml
     acceptance_ids:
       - AC-001
@@ -34,4 +35,10 @@ proofs:
     level: unit
     path: tests/test_feature.py
     command: pytest -q tests/test_feature.py
+    execution:
+      argv: [pytest, -q, tests/test_feature.py]
+      cwd: .
+      parser: pytest
+      environment: []
+      fresh: false
     expected_result: The approved behavior passes with no failures, errors, or skips.

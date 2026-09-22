@@ -24,6 +24,8 @@ if SCRIPT_DIRECTORY not in sys.path:
 import scope_git  # noqa: E402
 
 
+import scope_snapshot
+
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 FULL_OBJECT_ID_PATTERN = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 PHASES = ("product", "review", "handoff")
@@ -439,6 +441,9 @@ def _boundary(paths: Iterable[Path], repo_root: Path) -> tuple[dict[str, str], s
     return hashes, _structured_sha256(hashes)
 
 
+import scope_proofs
+
+
 class RefinementValidator:
     def __init__(
         self,
@@ -673,11 +678,18 @@ class RefinementValidator:
         if len(decision_ids) != len(set(decision_ids)):
             self.errors.append(f"{path}.decisions contains duplicate IDs")
         proofs = _mapping_list(self.manifest.get("proofs"), f"{path}.proofs", self.errors)
+        if manifest_version == 3 and self.phase in {"review", "handoff"} and not proofs:
+            self.errors.append(f"{path}: executable handoff requires proof obligations")
         proof_ids: list[str] = []
         for index, row in enumerate(proofs):
             label = f"{path}.proofs[{index}]"
             proof_id = _string(row.get("id"), f"{label}.id", self.errors)
             proof_ids.append(proof_id)
+            if manifest_version == 3 and row.get("classification") != "external_blocked":
+                try:
+                    scope_proofs.execution(row, self.repo_root, scope_proofs.policy(), require_cwd=row.get("classification") != "implementation_created")
+                except (ValueError, TypeError) as exc:
+                    self.errors.append(f"{label}: {exc}")
             classification = row.get("classification")
             if classification not in policy.get("proof_classifications", []):
                 self.errors.append(f"{label}.classification is not allowed by policy")
@@ -734,6 +746,11 @@ class RefinementValidator:
             except ValueError as exc:
                 if self.phase in {"review", "handoff"}:
                     self.errors.append(str(exc))
+        if manifest_version == 3:
+            try:
+                scope_proofs.groups(self.manifest, scope_proofs.policy()["maximum_stories_per_group"])
+            except (ValueError, KeyError, TypeError) as exc:
+                self.errors.append(f"invalid story dependency graph: {exc}")
         if len(story_ids) != len(set(story_ids)):
             self.errors.append(f"{path}.stories contains duplicate IDs")
         if manifest_version == 1:
@@ -919,6 +936,30 @@ class RefinementValidator:
                             receipt_hash = verification.get("receipt_sha256")
                             if not isinstance(receipt_hash, str) or not SHA256_PATTERN.fullmatch(receipt_hash):
                                 self.errors.append(f"{label}.verification.receipt_sha256 is invalid")
+            elif status == "deferred":
+                completed = self.state.get("completed_review_ids", [])
+                review_id = row.get("deferred_review_id")
+                minimum = int(self.policy["review"]["minor_optional_from_review"])
+                if row.get("severity") != "minor" or review_id not in completed or completed.index(review_id) + 1 < minimum:
+                    self.errors.append(f"{label}: only minor findings after {minimum} completed reviews may be deferred")
+                else:
+                    receipt_path = self.epic_dir / "reviews" / review_id / "reviewer-receipt.yaml"
+                    if not receipt_path.is_file() or row.get("deferred_receipt_sha256") != _file_sha256(receipt_path):
+                        self.errors.append(f"{label}: deferred review receipt is missing or stale")
+                    else:
+                        receipt_errors, _, packet, _, verifications, complete = _verify_receipt(
+                            self.epic_dir,
+                            receipt_path,
+                            self.repo_root,
+                            self.policy,
+                            check_template_current=False,
+                        )
+                        self.errors.extend(receipt_errors)
+                        if not complete or packet.get("review_kind") != "targeted" or not any(
+                            check.get("fingerprint") == fingerprint and check.get("outcome") == "still_open"
+                            for check in verifications
+                        ):
+                            self.errors.append(f"{label}: deferred finding requires a completed still-open targeted review")
             elif status == "accepted_risk":
                 if not isinstance(resolution, dict):
                     self.errors.append(f"{label}.resolution is required for accepted_risk")
@@ -943,6 +984,7 @@ class RefinementValidator:
                         receipt_path,
                         self.repo_root,
                         self.policy,
+                        check_template_current=False,
                     )
                     self.errors.extend(receipt_errors)
                     if not complete or packet.get("review_kind") != "targeted":
@@ -1029,6 +1071,30 @@ class RefinementValidator:
                     output = row.get("paths", {}).get("output") if isinstance(row, dict) else None
                     if isinstance(output, str):
                         paths.append(_repo_file(self.repo_root, output, "review output"))
+        if gate == "final_handoff":
+            for finding in self.findings.get("findings", []):
+                if not isinstance(finding, dict):
+                    continue
+                resolution = finding.get("resolution")
+                if not isinstance(resolution, dict):
+                    continue
+                hash_maps = [resolution.get("affected_path_hashes")]
+                hash_maps.extend(
+                    check.get("evidence_hashes")
+                    for check in resolution.get("checks", [])
+                    if isinstance(check, dict)
+                )
+                for hashes in hash_maps:
+                    if not isinstance(hashes, dict):
+                        continue
+                    for relative in hashes:
+                        paths.append(
+                            _repo_file(
+                                self.repo_root,
+                                relative,
+                                "final handoff resolution evidence",
+                            )
+                        )
         return paths
 
     def _require_gate(self, gate: str) -> None:
@@ -1077,7 +1143,11 @@ class RefinementValidator:
             review_dir = self.epic_dir / "reviews" / str(review_id)
             receipt_path = review_dir / "reviewer-receipt.yaml"
             receipt_errors, _, packet, _, _, complete = _verify_receipt(
-                self.epic_dir, receipt_path, self.repo_root, self.policy
+                self.epic_dir,
+                receipt_path,
+                self.repo_root,
+                self.policy,
+                check_template_current=False,
             )
             self.errors.extend(receipt_errors)
             if not complete:
@@ -1734,6 +1804,8 @@ def create_review_packet(args: argparse.Namespace) -> int:
             "target_findings": target_rows,
         }
         packet_path = review_dir / "review-packet.yaml"
+        if validator.manifest.get("schema_version") == 3:
+            packet["replay_snapshot"] = scope_snapshot.retain(working_root, epic_dir, review_id)
         _atomic_write_yaml_documents([(packet_path, packet)])
         print(_repo_relative(packet_path, working_root, "review packet"))
         return 0
@@ -1927,6 +1999,13 @@ def apply_review_receipt(args: argparse.Namespace) -> int:
             raise ValueError("refinement-state.yaml completed_review_ids must be a list")
         if complete and review_id not in completed:
             completed.append(review_id)
+        # Count completed semantic reviews only. Infrastructure repairs are the same review.
+        if complete and len(completed) >= int(policy["review"]["minor_optional_from_review"]):
+            for row in rows:
+                if row.get("severity") == "minor" and row.get("status") in {"open", "corrected"}:
+                    row["status"] = "deferred"
+                    row["deferred_review_id"] = review_id
+                    row["deferred_receipt_sha256"] = _file_sha256(args.receipt.resolve())
         state["status"] = (
             "ready_for_final_approval"
             if complete
@@ -1939,6 +2018,43 @@ def apply_review_receipt(args: argparse.Namespace) -> int:
         _atomic_write_yaml_documents([(findings_path, findings), (state_path, state)])
         print(f"Refinement review applied: review={review_id} complete={str(complete).lower()}")
         return 0
+
+
+def baseline_proofs(args: argparse.Namespace) -> int:
+    epic = args.epic_dir.resolve()
+    with _mutation_guard(args.run, epic) as (run, root):
+        path = epic / "delivery-manifest.yaml"
+        manifest = _load_yaml(path, "delivery manifest")
+        if manifest.get("schema_version") != 3:
+            raise ValueError("baseline executor requires a new manifest v3")
+        proofs = [row for row in manifest["proofs"] if row["classification"] == "existing_runnable"]
+        receipt = scope_proofs.execute(proofs, root, epic, scope_proofs.policy(Path(run["scope_root"])))
+        by_id = {row["proof_id"]: row for row in receipt["proofs"]}
+        for proof in proofs:
+            proof["baseline_evidence"] = by_id[proof["id"]]
+        _atomic_write_yaml_documents([(path, manifest)])
+        print(f"Baseline proofs: {receipt['status']} ({receipt['path']})")
+        return 0 if receipt["status"] == "pass" else 1
+
+
+def render_summary(args: argparse.Namespace) -> int:
+    epic = args.epic_dir.resolve()
+    with _mutation_guard(args.run, epic) as (_, root):
+        validator = RefinementValidator(epic, "review", args.policy, root)
+        errors = validator.validate()
+        if errors:
+            raise ValueError("refinement is not ready for summary: " + "; ".join(errors))
+        state, findings = validator.state, validator.findings
+        lines = [f"# Refinement review — {state['epic_id']}", "",
+                 f"Completed semantic reviews: {len(state['completed_review_ids'])}.", "",
+                 "| Finding | Severity | Status | Required correction |", "| --- | --- | --- | --- |"]
+        for row in findings.get("findings", []):
+            title = str(row["title"]).replace("|", "\\|").replace("\n", " ")
+            lines.append(f"| {row['id']} | {row['severity']} | {row['status']} | {title} |")
+        lines += ["", "Deferred minor findings remain unverified and optional; they are visible at final-handoff approval.",
+                  "The manifest, review receipts, and finding ledger remain the source evidence.", ""]
+        (epic / "refinement-review.md").write_text("\n".join(lines), encoding="utf-8")
+    return 0
 
 
 def validate_command(args: argparse.Namespace) -> int:
@@ -1956,6 +2072,13 @@ def validate_command(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    for name, handler in (("baseline-proofs", baseline_proofs), ("render-summary", render_summary)):
+        selected = subparsers.add_parser(name)
+        selected.add_argument("epic_dir", type=Path)
+        selected.add_argument("--run", type=Path, required=True)
+        selected.add_argument("--policy", type=Path, default=_default_policy_path())
+        selected.set_defaults(handler=handler)
 
     validate_parser = subparsers.add_parser("validate", help="Validate one refinement boundary")
     validate_parser.add_argument("epic_dir", type=Path)

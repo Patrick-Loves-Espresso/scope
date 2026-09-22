@@ -75,7 +75,7 @@ def _fixture(
     _git(root, "add", ".")
     _git(root, "commit", "-q", "-m", "handoff")
     _git(root, "branch", "epic/E-001")
-    work = tmp_path / "worktree/E-001"
+    work = tmp_path / "wip/E-001"
     work.parent.mkdir()
     _git(root, "worktree", "add", "-q", str(work), "epic/E-001")
     epic_dir = work / "docs/epics/E-001"

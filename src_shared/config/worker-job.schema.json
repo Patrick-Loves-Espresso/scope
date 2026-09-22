@@ -31,20 +31,15 @@
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
     },
     "command": {"enum": ["epic_refine", "implement", "audit_epic"]},
-    "role": {"enum": ["refinement", "implementation", "audit", "diagnostic"]},
+    "role": {"enum": ["refinement", "implementation", "diagnostic"]},
     "phase": {
       "enum": [
         "product",
-        "design",
-        "handoff",
+        "design_handoff",
         "correction",
-        "finalize",
         "story",
-        "epic_verify",
         "audit_remediation",
         "debugging",
-        "delivery_summary",
-        "merge_findings",
         "investigate"
       ]
     },
@@ -111,6 +106,14 @@
       "uniqueItems": true,
       "items": {"type": "string", "minLength": 1}
     },
+    "story_ids": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "allowed_commands": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
     "implementation_evidence_path": {"type": "string", "minLength": 1},
     "result_path": {"type": "string", "minLength": 1}
   },
@@ -126,7 +129,7 @@
       "then": {
         "properties": {
           "command": {"const": "epic_refine"},
-          "phase": {"enum": ["product", "design", "handoff", "correction", "finalize"]},
+          "phase": {"enum": ["product", "design_handoff", "correction"]},
           "required_proof_ids": {"maxItems": 0}
         }
       }
@@ -138,20 +141,8 @@
         "properties": {
           "command": {"const": "implement"},
           "phase": {
-            "enum": ["story", "epic_verify", "audit_remediation", "debugging", "delivery_summary"]
+            "enum": ["story", "audit_remediation", "debugging"]
           }
-        }
-      }
-    },
-    {
-      "if": {"properties": {"role": {"const": "audit"}}, "required": ["role"]},
-      "then": {
-        "properties": {
-          "command": {"enum": ["epic_refine", "implement", "audit_epic"]},
-          "phase": {"const": "merge_findings"},
-          "write_scope": {"maxItems": 0},
-          "required_validations": {"maxItems": 0},
-          "required_proof_ids": {"maxItems": 0}
         }
       }
     },

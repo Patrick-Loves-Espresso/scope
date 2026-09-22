@@ -544,7 +544,7 @@ During implementation, the epic folder must also contain
 
 ### implementation-evidence.yaml
 **Template:** `templates-technical-arc42-c4/epic/implementation-evidence.yaml`
-**Content:** The current workspace fingerprint and, for every planned story proof, its exact command, strict pass/fail/error/skip counts, summary, and durable evidence hashes
+**Content:** The current workspace fingerprint; for every executable story proof, its exact command, strict pass/fail/error/skip counts, summary, and durable evidence hashes; and the IDs of planned `external_blocked` proofs that remain declared unavailable rather than executed
 **Owner:** Scope implementation runner from validated worker results; mechanically verified before audit
 **Readers:** Auditor, Epic Housekeeping
 **Trigger:** Created and updated during implementation

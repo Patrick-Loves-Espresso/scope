@@ -13,6 +13,7 @@ from filelock import FileLock
 import psutil
 import pytest
 import yaml
+from jsonschema import Draft7Validator, Draft202012Validator
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -65,7 +66,7 @@ def _repo(path: Path) -> Path:
 def _scope(path: Path, provider: str = "codex") -> Path:
     (path / "config").mkdir(parents=True)
     (path / "workers").mkdir()
-    for name in ("worker-job.schema.json", "worker-result.schema.json", "codegraph-policy.yaml"):
+    for name in ("worker-job.schema.json", "worker-result.schema.json", "codegraph-policy.yaml", "execution-policy.yaml"):
         shutil.copy2(REPO_ROOT / "src_shared/config" / name, path / "config" / name)
     shutil.copy2(REPO_ROOT / f"src_{provider}/config/worker-policy.yaml", path / "config/worker-policy.yaml")
     for source in (REPO_ROOT / "src_shared/workers").glob("*.md"):
@@ -99,7 +100,7 @@ def _initialize(monkeypatch: pytest.MonkeyPatch, repo: Path, scope: Path, comman
 
 def _job(repo: Path, scope: Path, *, role: str = "implementation", write_scope: list[str] | None = None) -> tuple[dict, Path]:
     command = "epic_refine" if role == "refinement" else "implement"
-    phase = {"implementation": "story", "refinement": "design", "audit": "merge_findings", "diagnostic": "investigate"}[role]
+    phase = {"implementation": "story", "refinement": "design_handoff", "diagnostic": "investigate"}[role]
     job_id = f"gd-001-{role}-001"
     job_dir = repo / "tmp_debug/scope-runs/gd-001" / command / "jobs" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
@@ -544,6 +545,70 @@ def test_implementation_worker_rejects_ignored_changed_paths_immediately(
     result = _result(job, actual)
     with pytest.raises(RUNNER.ContractError, match="ignored paths"):
         RUNNER._validate_attribution(job, result, before, after)
+
+
+def test_implementation_worker_ignores_only_known_gitignored_test_artifacts(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    scope = _scope(tmp_path / "scope")
+    job, _ = _job(repo, scope, write_scope=["."])
+    with (repo / ".gitignore").open("a", encoding="utf-8") as stream:
+        stream.write("\n__pycache__/\n.pytest_cache/\n.coverage*\n.env\n")
+    _command("git", "add", ".gitignore", cwd=repo)
+    _command("git", "commit", "-m", "ignore test artifacts", cwd=repo)
+    before = RUNNER.capture_snapshot(repo)
+    (repo / "src/value.txt").write_text("changed\n", encoding="utf-8")
+    (repo / "src/__pycache__").mkdir()
+    (repo / "src/__pycache__/value.pyc").write_bytes(b"cache")
+    (repo / ".pytest_cache").mkdir()
+    (repo / ".pytest_cache/state").write_text("cache", encoding="utf-8")
+    (repo / ".coverage").write_text("coverage", encoding="utf-8")
+    after = RUNNER.capture_snapshot(repo)
+    result = _result(
+        job,
+        [
+            "src/value.txt",
+            "src/__pycache__",
+            "src/__pycache__/value.pyc",
+            ".pytest_cache",
+            ".pytest_cache/state",
+            ".coverage",
+        ],
+    )
+    assert RUNNER._validate_attribution(job, result, before, after) == [
+        "src/value.txt"
+    ]
+
+    (repo / ".env").write_text("secret=true\n", encoding="utf-8")
+    unsafe = RUNNER.capture_snapshot(repo)
+    with pytest.raises(RUNNER.ContractError, match=r"\.env"):
+        RUNNER._validate_attribution(job, result, before, unsafe)
+
+
+def test_optional_allowed_validation_result_is_informational_but_failure_blocks(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    scope = _scope(tmp_path / "scope")
+    job, _ = _job(repo, scope)
+    job["allowed_commands"] = ["pytest -q"]
+    schema = json.loads((scope / "config/worker-result.schema.json").read_text())
+    result = _result(job, [])
+    result["validations"] = [
+        {"command": "pytest -q", "exit_code": 0, "summary": "1 passed"}
+    ]
+    RUNNER.validate_result(result, job, schema)
+
+    result["validations"][0]["exit_code"] = 1
+    with pytest.raises(RUNNER.ContractError, match="failed validations"):
+        RUNNER.validate_result(result, job, schema)
+
+    result["validations"] = [
+        {"command": "unknown", "exit_code": 0, "summary": "passed"}
+    ]
+    with pytest.raises(RUNNER.ContractError, match="undeclared validation"):
+        RUNNER.validate_result(result, job, schema)
 
 
 def test_evidence_promotion_is_idempotent_and_tracks_reversion(tmp_path: Path) -> None:
@@ -1072,6 +1137,77 @@ def test_codex_command_uses_openai_compatible_result_schema(tmp_path: Path) -> N
     assert_supported(schema)
 
 
+def test_claude_command_adapts_schema_without_mutating_canonical_contract() -> None:
+    canonical = json.loads(
+        (REPO_ROOT / "src_shared/config/worker-result.schema.json").read_text()
+    )
+    before = json.dumps(canonical, sort_keys=True)
+    command = RUNNER.build_claude_command(
+        "claude", {"model": "claude-opus-5", "reasoning_effort": "high", "permission_mode": "dontAsk"},
+        {"required_validations": []}, canonical, "read-only", {},
+    )
+    projected = json.loads(command[command.index("--json-schema") + 1])
+    assert "$schema" not in projected
+    assert not {"allOf", "anyOf", "oneOf"}.intersection(projected)
+    Draft7Validator.check_schema(projected)
+    assert json.dumps(canonical, sort_keys=True) == before
+    assert projected["properties"]["changed_paths"]["uniqueItems"] is True
+
+
+@pytest.mark.parametrize("role", ["refinement", "implementation", "diagnostic"])
+@pytest.mark.parametrize("case,valid", [
+    ("completed", True), ("needs_user", True), ("blocked", True), ("failed", True),
+    ("completed_with_question", False), ("needs_user_without_question", False),
+    ("blocked_without_issue", False), ("failed_with_minor_only", False),
+    ("duplicate_changed_paths", False), ("extra_property", False),
+    ("invalid_payload", False), ("questions_not_array", False),
+])
+def test_claude_transport_and_local_validation_preserve_result_constraints(role: str, case: str, valid: bool) -> None:
+    canonical = json.loads(
+        (REPO_ROOT / "src_shared/config/worker-result.schema.json").read_text()
+    )
+    payloads = {
+        "refinement": {"kind": "refinement", "authored_artifacts": [], "decision_refs": []},
+        "implementation": {"kind": "implementation", "notes": "done", "proof_evidence": []},
+        "diagnostic": {"kind": "diagnostic", "cause": "known", "evidence": [], "recommended_action": "retry"},
+    }
+    result = {
+        "schema_version": 2, "job_id": "schema-check", "status": "completed", "summary": "done",
+        "changed_paths": [], "validations": [], "questions": [], "issues": [], "payload": payloads[role],
+    }
+    if case in {"needs_user", "blocked", "failed"}:
+        result["status"] = case
+    if case in {"needs_user", "completed_with_question"}:
+        result["questions"] = [{"id": "Q1", "question": "Which?", "reason": "Missing input", "evidence": ["docs/spec.md"]}]
+    if case in {"blocked", "failed"}:
+        result["issues"] = [{"severity": "blocking", "message": "Missing input", "evidence": ["docs/spec.md"]}]
+    if case == "needs_user_without_question":
+        result["status"] = "needs_user"
+    if case == "blocked_without_issue":
+        result["status"] = "blocked"
+    if case == "failed_with_minor_only":
+        result["status"] = "failed"
+        result["issues"] = [{"severity": "minor", "message": "Minor", "evidence": ["docs/spec.md"]}]
+    if case == "duplicate_changed_paths":
+        result["changed_paths"] = ["src/a.py", "src/a.py"]
+    if case == "extra_property":
+        result["approved"] = True
+    if case == "invalid_payload":
+        result["payload"] = {"kind": role}
+    if case == "questions_not_array":
+        result["questions"] = None
+    assert Draft202012Validator(canonical).is_valid(result) is valid
+    local_only = case in {
+        "completed_with_question", "needs_user_without_question", "blocked_without_issue", "failed_with_minor_only",
+    }
+    assert Draft7Validator(RUNNER.claude_output_schema(canonical)).is_valid(result) is (valid or local_only)
+    if not valid:
+        # The runner must reject malformed responses even when the API's schema
+        # subset cannot express the status-dependent rules.
+        with pytest.raises(RUNNER.ContractError, match="worker result"):
+            RUNNER.validate_result(result, {}, canonical)
+
+
 def test_status_reports_live_worker_as_active(tmp_path: Path) -> None:
     repo = _repo(tmp_path / "repo")
     run_path = repo / "tmp_debug/scope-runs/gd-001/implement/run.yaml"
@@ -1178,3 +1314,46 @@ def test_codegraph_sync_is_not_called_for_refinement_job(monkeypatch: pytest.Mon
     called = []
     monkeypatch.setattr(RUNNER.scope_codegraph, "sync", lambda *args: called.append(args))
     assert called == []
+
+
+def test_v3_failed_checkpoint_retains_changes_and_debugging_budget_survives_resume(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import shlex
+    repo = _repo(tmp_path / 'repo')
+    scope = _scope(tmp_path / 'scope')
+    manifest_path = repo / 'docs/epics/gd-001/delivery-manifest.yaml'
+    argv = [sys.executable, '-c', "print('1 failed in 0.01s')"]
+    manifest = {'schema_version': 3, 'epic_id': 'gd-001', 'stories': [{'id': 'S1', 'depends_on': [], 'proof_ids': ['P1']}],
+                'proofs': [{'id': 'P1', 'command': shlex.join(argv), 'level': 'unit', 'execution': {'argv': argv, 'cwd': '.', 'parser': 'pytest', 'environment': [], 'fresh': False}}]}
+    manifest_path.write_text(yaml.safe_dump(manifest))
+    _command('git', 'add', '.', cwd=repo)
+    _command('git', 'commit', '-m', 'proof contract', cwd=repo)
+    run_path = _initialize(monkeypatch, repo, scope)
+    template, _ = _job(repo, scope)
+    fake = _fake_writer(tmp_path / 'author.py')
+    fake.write_text(fake.read_text().replace("write_text('after\\n'", "write_text(job_id"))
+    monkeypatch.setattr(RUNNER.scope_codegraph, 'sync', lambda policy, root, prior: prior)
+    monkeypatch.setattr(RUNNER, 'provider_preflight', lambda provider, selected: {'executable': sys.executable, 'version': 'fixture'})
+    for index in range(4):
+        job = {**template, 'job_id': f'group-{index}', 'phase': 'story' if index == 0 else 'debugging', 'required_proof_ids': ['P1'], 'story_ids': ['S1']}
+        directory = run_path.parent / 'jobs' / job['job_id']
+        directory.mkdir()
+        job['result_path'] = str(directory / 'result.json')
+        job_path = directory / 'job.yaml'
+        job_path.write_text(yaml.safe_dump(job))
+        monkeypatch.setattr(RUNNER, 'build_codex_command', lambda executable, selected, working_root, access, schema, output, codegraph:
+                            [sys.executable, str(fake), str(output), str(repo / 'src/value.txt'), 'src/value.txt', job['job_id']])
+        args = SimpleNamespace(job=job_path, role='implementation', cwd=repo, result=Path(job['result_path']), provider='codex', worker_profile='default', access='workspace-write')
+        if index < 3:
+            assert RUNNER.run_worker(args) == 1
+            run = yaml.safe_load(run_path.read_text())
+            assert run['active_job'] is None
+            assert run['completed_jobs'][-1]['status'] == 'verification_failed'
+            assert (repo / 'src/value.txt').read_text() == job['job_id']
+            evidence = yaml.safe_load((repo / job['implementation_evidence_path']).read_text())
+            assert evidence['stories'][0]['status'] == 'pending'
+            assert RUNNER.recover_run(run_path)['status'] == 'idle'
+        else:
+            with pytest.raises(RUNNER.ContractError, match='budget exhausted'):
+                RUNNER.run_worker(args)
+    assert yaml.safe_load(run_path.read_text())['pre_audit_debugging_jobs'] == 2
+    assert (repo / 'src/value.txt').read_text() == 'group-2'

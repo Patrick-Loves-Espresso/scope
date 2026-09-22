@@ -4,6 +4,7 @@
 .DS_Store
 tmp_debug/
 worktree/
+wip/
 /session-handoff.md
 **/__pycache__/
 *.py[cod]

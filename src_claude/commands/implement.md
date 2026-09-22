@@ -6,6 +6,11 @@ args: "{epic-id}"
 
 # /implement
 
+For this orchestration-only session, prefer `gpt-5.6-sol` at high effort in
+Codex or `claude-opus-5` at high effort in Claude. The host session selects its
+own model; worker/reviewer policies do not switch it. Respect an explicit user
+model choice and do not interrupt an active workflow solely to change models.
+
 You are the sole user-facing orchestrator. Fresh implementation workers own
 bounded source changes; independent reviewers remain read-only. Own user
 decisions, worktree/Git lifecycle, worker supervision, proof, nested audit, and
@@ -58,13 +63,13 @@ refine({epic-id}): implementation handoff
 ```
 
 Create or verify branch `epic/{epic-id}` in
-`${REPOSITORY_ROOT}/worktree/{epic-id}`. Never overwrite repository
+`${REPOSITORY_ROOT}/wip/{epic-id}`. Never overwrite repository
 instructions. Link the root `.env` only when the worktree has none. Re-resolve
 the epic inside the worktree, but retain the absolute installed `SCOPE_ROOT`
 captured above.
 
 ```bash
-WORKING_ROOT="${REPOSITORY_ROOT}/worktree/${EPIC_ID}"
+WORKING_ROOT="${REPOSITORY_ROOT}/wip/${EPIC_ID}"
 EPIC_DIR="$(find "$WORKING_ROOT/docs/epics" -mindepth 1 -maxdepth 1 -type d \
   -iname "*${EPIC_ID}*" -print | sort | head -1)"
 RUN="${REPOSITORY_ROOT}/tmp_debug/scope-runs/${EPIC_ID}/implement/run.yaml"
@@ -115,62 +120,76 @@ This command alone owns the authorized label
 It accepts no branch tip, foreign repository, extra Git option, or alternate
 message. Report any resulting merge commit. This authorizes no other commit.
 
-## Story workers
+## Story groups and proof checkpoints
 
-Read `delivery-manifest.yaml` and the referenced `file-plan-story-*.yaml`
-documents. Require unique story/acceptance/proof IDs, one owner per item, valid
-dependencies, and an acyclic story graph. Execute dependency-ready stories in
-stable order, never concurrently.
+New epics use delivery-manifest v3. Keep already-approved older epics on the
+Scope installation that approved them; never rewrite a hash-bound handoff to
+upgrade it. Fresh processes isolate every group from earlier epics.
 
-For manifest v2, also require every `documentation_obligations` row to name one
-existing owner story, normalized repository-relative target path, and canonical
-`requirement_ref`. Treat v1 as having no documentation obligations. Add each v2
-target to only its owner story's exact write scope. The worker must implement the
-required durable documentation content with that story; it may not defer it to
-audit or `wrap_epic`. A new product or architecture requirement returns to
-refinement instead of silently widening the obligation.
-
-For each story, create a v2 job containing only the relevant approved artifact
-hashes and authority references, its bounded read/write paths, exact validation
-commands, `required_proof_ids`, and `result_path`. Candidate files are advisory; binding contracts,
-touchpoints, forbidden changes, and proof obligations come from the story plan.
-A path outside the declared write scope requires a new job after evidence-based
-reclassification—it is not silently absorbed.
-
-Every implementation job explicitly supplies `required_proof_ids`: the exact
-owned proof IDs for story, verification, and remediation work, or `[]` only
-when the named phase has no proof obligation.
+Read the approved manifest and story plans, then obtain the stable groups:
 
 ```bash
-"$PYTHON_CMD" "$WORKER" preflight --provider "$PROVIDER" \
-  --role implementation --phase story --worker-profile "$WORKER_PROFILE" \
-  --scope-root "$SCOPE_ROOT"
+"$PYTHON_CMD" "$WORKER" story-groups "$EPIC_DIR" --scope-root "$SCOPE_ROOT"
+```
+
+The shared execution policy caps a dependency-connected group at three stories.
+Run groups sequentially, one writer at a time. One worker owns the complete
+group: union its read/write boundaries, acceptance IDs, proof IDs, and required
+documentation targets. Individual story and proof ownership stays unchanged.
+Each documentation obligation retains its owner and `requirement_ref`; include
+its target in the group's write scope and implement it with that group.
+
+Create a v2 authoring job with `story_ids` matching the returned group and
+`required_proof_ids` equal to its exact proof union. Hash-bind the approved
+manifest, member plans, relevant artifacts, and decisions. Candidate files are
+advisory; approved contracts and forbidden changes remain binding. New scope or
+product/architecture decisions return to refinement. Use `allowed_commands`
+for optional approved local test runs; reserve `required_validations` for
+additional mandatory checks. Do not require the author to rerun every proof.
+
+```bash
 "$PYTHON_CMD" "$WORKER" run --provider "$PROVIDER" \
   --role implementation --job "$JOB_PATH" --result "$RESULT_PATH" \
   --cwd "$WORKING_ROOT" --access workspace-write \
   --worker-profile "$WORKER_PROFILE"
 ```
 
-Accept only a v2 completed result matching the actual changed paths and every
-required validation. `needs_user` must batch every currently discoverable
-blocking question; explain evidence and tradeoffs to the user, persist the
-answer in a canonical decision, then launch a fresh job. `blocked`, `failed`,
-cancellation, missing proof, or unexplained path stops sequencing.
-
-Each story executes its exact implementation proof without `/bin/sh -lc` and
-records command, exit code, pass/fail/error/skip counts, evidence path/hash, and
-affected content hashes in `implementation-evidence.yaml`. A passing proof
-requires exit code 0, zero failures/errors/unexplained skips, and nonzero
-applicable execution. Never let a trailing summary overwrite earlier failing
-counts. Evidence must be durable and must not depend on `tmp_debug`.
+`run` preflights internally. Accept a group only after both the observed author
+changes and its runner proof checkpoint pass. The worker returns an empty
+`proof_evidence`; Scope executes approved argv, captures raw logs, counts,
+context hashes and timings, and writes implementation-evidence.yaml. Workers
+may test while developing but never manufacture authoritative proof evidence.
+A failed checkpoint retains attributed code and reports `verification_failed`;
+it does not mark that group completed or authorize the next group.
 
 ## Epic verification, audit, and remediation
 
-After every story, launch one fresh `implementation/epic_verify` worker over
-the complete approved boundary. It reruns acceptance, regression, native
-contract, runtime/operational, and observable-value proofs and may repair only
-in-boundary defects. Product or architecture changes return to refinement. It
-must leave implementation evidence that passes the complete evidence validator.
+After all groups, execute the complete approved proof inventory once:
+
+```bash
+"$PYTHON_CMD" "$WORKER" verify-proofs "$EPIC_DIR" --run "$RUN"
+```
+
+This inventory includes acceptance, regression, native contract,
+runtime/operational, and observable-value obligations. Earlier group results
+do not certify the final workspace. Identical local execution contexts may
+share one result; external/stateful proofs declare `fresh: true` and run again.
+Proofs classified `external_blocked` are declared evidence limitations rather
+than commands: Scope retains their IDs in implementation evidence and the
+summary, never executes them, and never reports them as passed. They do not
+prevent a story checkpoint when all executable proofs pass.
+Keep explicit repetition or flakiness checks in the project command itself.
+Scope executes project commands; it does not provision fixtures.
+
+On a failed group or final checkpoint, launch a fresh `implementation/debugging`
+worker over the failed checks and approved affected boundary. Then rerun the
+complete group proof set, or the complete epic set for a final checkpoint.
+The shared policy allows two debugging jobs per implementation run, persisted
+across resumes. Exhaustion stops with failed checks and retained changes.
+This budget is separate from audit remediation. Do not launch an unconditional
+model verification job. `needs_user` batches all currently discoverable material
+questions. Out-of-scope writes, invalid attribution, or infrastructure failures
+stop sequencing; never auto-revert user changes.
 
 Execute the installed `audit_epic.md` contract inside this orchestrator with
 the same worker/reviewer profiles and set; do not create a second
@@ -180,19 +199,24 @@ For audit `FAIL`, group current remediation-required findings by coupled root
 cause and launch one fresh `implementation/audit_remediation` worker per
 bounded batch. Require pattern-wide inspection, sibling surfaces, strict
 closure proof, and updated durable implementation evidence. Mark a finding
-`remediated_pending_verification` only with that evidence, then run one
+`remediated_pending_verification` only with that evidence, then rerun the complete epic proof set and run one
 authorized targeted audit. Route product/architecture defects to refinement
 and genuine user/documentation/accepted-risk decisions to the user. A targeted
 `FAIL` or `BLOCKED` stops delivery.
 
-After validated audit `PASS`, launch one `implementation/delivery_summary`
-worker whose only write is `implementation-summary.md`. It summarizes durable
-evidence; it does not change code, contracts, findings, Git history, or the
-worktree lifecycle.
+After validated audit `PASS`, render the delivery summary directly from evidence:
+
+```bash
+"$PYTHON_CMD" "$WRAP_FINALIZER" render-summary "$EPIC_DIR" \
+  --run "$RUN" --policy "$WRAP_POLICY" --audit-policy "$AUDIT_POLICY"
+```
+
+The renderer binds its summary to the approved manifest, current implementation
+evidence, audit findings, and report. It performs no model work.
 
 Immediately seal the completed delivery with the deterministic finalizer. It
 must verify the current audit and durable implementation delta, including every
-v2 documentation target, before writing the seal:
+declared documentation target, before writing the seal:
 
 ```bash
 "$PYTHON_CMD" "$WRAP_FINALIZER" seal "$EPIC_DIR" \

@@ -157,6 +157,7 @@ check_install() {
     "$tmpdir/.claude/scripts/.pytest_cache" \
     "$tmpdir/.claude/config" \
     "$tmpdir/.claude/commands" \
+    "$tmpdir/.claude/workers" \
     "$tmpdir/.claude/governance" \
     "$tmpdir/.claude/skills/project-documentation/templates-technical-arc42-c4/epic" \
     "$tmpdir/plugins/scope/scripts/__pycache__" \
@@ -164,9 +165,11 @@ check_install() {
     "$tmpdir/plugins/scope/config" \
     "$tmpdir/plugins/scope/commands" \
     "$tmpdir/plugins/scope/docs" \
+    "$tmpdir/plugins/scope/workers" \
     "$tmpdir/plugins/scope/governance" \
     "$tmpdir/plugins/scope/skills/project-documentation/templates-technical-arc42-c4/epic"
   touch \
+    "$tmpdir/.claude/workers/audit-worker.md" \
     "$tmpdir/.claude/scripts/.DS_Store" \
     "$tmpdir/.claude/scripts/scope-reviewer-claude-pexpect.py" \
     "$tmpdir/.claude/scripts/scope-proof-preflight.py" \
@@ -176,6 +179,7 @@ check_install() {
     "$tmpdir/.claude/skills/project-documentation/templates-technical-arc42-c4/epic/acceptance-traceability.yaml" \
     "$tmpdir/.claude/scripts/__pycache__/stale.pyc" \
     "$tmpdir/.claude/scripts/.pytest_cache/stale" \
+    "$tmpdir/plugins/scope/workers/audit-worker.md" \
     "$tmpdir/plugins/scope/scripts/.DS_Store" \
     "$tmpdir/plugins/scope/scripts/scope-reviewer-claude-pexpect.py" \
     "$tmpdir/plugins/scope/scripts/scope-proof-preflight.py" \
@@ -215,7 +219,6 @@ check_install() {
   test -f "$tmpdir/.claude/scripts/scope_codegraph.py"
   test -f "$tmpdir/.claude/workers/refinement-worker.md"
   test -f "$tmpdir/.claude/workers/implementation-worker.md"
-  test -f "$tmpdir/.claude/workers/audit-worker.md"
   test -f "$tmpdir/.claude/workers/diagnostic-worker.md"
   test -f "$tmpdir/.claude/requirements.txt"
 
@@ -246,7 +249,6 @@ check_install() {
   test -f "$tmpdir/plugins/scope/scripts/scope_codegraph.py"
   test -f "$tmpdir/plugins/scope/workers/refinement-worker.md"
   test -f "$tmpdir/plugins/scope/workers/implementation-worker.md"
-  test -f "$tmpdir/plugins/scope/workers/audit-worker.md"
   test -f "$tmpdir/plugins/scope/workers/diagnostic-worker.md"
   test -f "$tmpdir/plugins/scope/requirements.txt"
   test -f "$tmpdir/plugins/scope/.codex-plugin/plugin.json"
@@ -300,11 +302,12 @@ check_install() {
   grep -n "docs/architecture/backend/01-intro.md" "$tmpdir/plugins/scope/skills/project-documentation/SKILL.md"
   grep -n "do not ask for a" "$tmpdir/.claude/skills/project-documentation/SKILL.md"
   grep -n "Do not ask for a Jira project key" "$tmpdir/.claude/skills/project-tracking/SKILL.md"
-  grep -n '^model: sonnet$' "$tmpdir/.claude/agents/developer.md"
-  grep -n '^model: gpt-5.6-terra$' "$tmpdir/plugins/scope/agents/developer.md"
+  grep -n '^model: claude-fable-5-1$' "$tmpdir/.claude/agents/developer.md"
+  grep -n '^model: gpt-6-astra$' "$tmpdir/plugins/scope/agents/developer.md"
   grep -n '^model_reasoning_effort: max$' "$tmpdir/plugins/scope/agents/developer.md"
 
   for obsolete in \
+    workers/audit-worker.md \
     commands/audit_epic/reviewer-codex.md \
     commands/audit_epic/reviewer-claude.md \
     commands/audit_epic/reviewer-agy.md \
@@ -401,11 +404,15 @@ check_worker_contracts() {
     test -f "$command"
   done
 
-  for worker in refinement implementation audit diagnostic; do
+  for worker in refinement implementation diagnostic; do
     test -f "src_shared/workers/${worker}-worker.md"
   done
   test -f src_shared/config/worker-job.schema.json
   test -f src_shared/config/worker-result.schema.json
+  test -f src_shared/config/execution-policy.yaml
+  test -f src_shared/scripts/scope_proofs.py
+  test -f src_shared/scripts/scope_snapshot.py
+  test ! -f src_shared/workers/audit-worker.md
 
   if grep -R -n -E 'codex exec|agy --model|claude --model' \
     src_shared/commands/epic_refine.md \
@@ -444,7 +451,7 @@ check_codex_invocation() {
 
   if grep -R -n -F 'gpt-5.5' \
     src_shared/config src_shared/scripts src_codex/config src_claude/config; then
-    fail "Scope worker/reviewer defaults must use the GPT-5.6 family"
+    fail "Scope worker/reviewer defaults must use the approved Sol/Astra routing"
   fi
 
   grep -n -- "--ephemeral" src_shared/scripts/scope-worker.py
@@ -452,10 +459,12 @@ check_codex_invocation() {
   grep -n -- "--output-schema" src_shared/scripts/scope-worker.py
   grep -n -- "--sandbox" src_shared/scripts/scope-worker.py
   grep -n 'model_reasoning_effort' src_shared/scripts/scope-worker.py
-  grep -n 'model: gpt-5.6-terra' src_codex/config/worker-policy.yaml
+  grep -n 'model: gpt-6-astra' src_codex/config/worker-policy.yaml
+  grep -n 'product: {model: gpt-5.6-sol, reasoning_effort: high}' src_codex/config/worker-policy.yaml
+  grep -n 'investigate: {model: gpt-5.6-sol, reasoning_effort: high}' src_codex/config/worker-policy.yaml
   grep -n -- "--ignore-user-config" src_shared/config/reviewer-policy.yaml
   grep -n -- "- read-only" src_shared/config/reviewer-policy.yaml
-  grep -n '^model: gpt-5.6-terra$' src_codex/agents/developer.md
+  grep -n '^model: gpt-6-astra$' src_codex/agents/developer.md
   grep -n '^model_reasoning_effort: max$' src_codex/agents/developer.md
   grep -n 'minimum_version: 1.5.0' src_shared/config/codegraph-policy.yaml
   grep -n 'sync_on_prepare: true' src_shared/config/codegraph-policy.yaml
@@ -490,16 +499,16 @@ check_claude_invocation() {
   if grep -n 'reported_fallback_model_families:' src_claude/config/worker-policy.yaml; then
     fail "worker policy must record raw model usage without fallback-family taxonomy"
   fi
-  grep -n 'product: {model: fable' src_claude/config/worker-policy.yaml
-  grep -n 'epic_verify: {model: opus' src_claude/config/worker-policy.yaml
+  grep -n 'product: {model: claude-opus-5, reasoning_effort: high}' src_claude/config/worker-policy.yaml
+  grep -n 'investigate: {model: claude-opus-5, reasoning_effort: high}' src_claude/config/worker-policy.yaml
+  grep -n 'design_handoff: {model: claude-fable-5-1' src_claude/config/worker-policy.yaml
   grep -n -- "--strict-mcp-config" src_shared/scripts/scope-worker.py
   grep -n -- "--no-session-persistence" src_shared/scripts/scope-worker.py
   grep -n -- "--permission-mode" src_shared/scripts/scope-worker.py
   grep -n -- "--allowedTools" src_shared/scripts/scope-worker.py
   grep -n -- "--disallowedTools" src_shared/scripts/scope-worker.py
-  grep -n 'claude: {model: fable' src_shared/config/reviewer-policy.yaml
-  grep -n 'claude: {model: opus' src_shared/config/reviewer-policy.yaml
-  grep -n 'opencode: {model: zai-coding-plan/glm-5.2' src_shared/config/reviewer-policy.yaml
+  grep -n 'claude: {model: claude-fable-5-1' src_shared/config/reviewer-policy.yaml
+  grep -n 'opencode: {model: meta/muse-spark-1.3-contributor, reasoning_effort: high}' src_shared/config/reviewer-policy.yaml
   grep -n -- "--safe-mode" src_shared/config/reviewer-policy.yaml
   grep -n -- "--strict-mcp-config" src_shared/config/reviewer-policy.yaml
   grep -n -- "--permission-mode" src_shared/config/reviewer-policy.yaml
@@ -556,11 +565,15 @@ check_unit_tests() {
 
   python_cmd="${SCOPE_PYTHON:-python3}"
   command -v "$python_cmd" >/dev/null 2>&1 || fail "Python is required; set SCOPE_PYTHON to a Python 3 executable"
-  "$python_cmd" -c 'import filelock, jsonschema, psutil, pytest, yaml' >/dev/null 2>&1 ||
+  "$python_cmd" -c 'import coverage, filelock, jsonschema, psutil, pytest, yaml' >/dev/null 2>&1 ||
     fail "Missing Python dependencies; run: python3 -m pip install -r requirements-dev.txt"
 
+  mkdir -p tmp_debug
+  "$python_cmd" -m coverage erase
   PYTHONDONTWRITEBYTECODE=1 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
-    "$python_cmd" -m pytest -q tests/unit
+    "$python_cmd" -m coverage run -m pytest -q tests/unit
+  "$python_cmd" -m coverage combine
+  "$python_cmd" -m coverage report
 }
 
 main() {

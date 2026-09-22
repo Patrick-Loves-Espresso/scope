@@ -483,7 +483,7 @@ def test_audit_run_publishes_one_receipt_and_no_metadata_sidecars(
     assert "source_snapshot" not in receipt
     assert receipt["git_identity"]["unchanged"] is True
     assert "isolation" not in receipt and "codegraph" not in receipt
-    assert row["requested_model"] == "gpt-5.6-sol"
+    assert row["requested_model"] == "gpt-6-astra"
     assert row["requested_reasoning_effort"] == "max"
     assert row["decision"] == "findings"
     assert row["covered_acceptance_ids"] == ["AC-001"]
@@ -571,7 +571,7 @@ def test_claude_cli_is_direct_and_uses_stdin(tmp_path: Path) -> None:
     ]
     prompt = repo / row["paths"]["prompt"]
     assert f"`{executable} explore " in prompt.read_text()
-    assert row["requested_model"] == "fable"
+    assert row["requested_model"] == "claude-fable-5-1"
     assert "model_execution" not in row
 
 

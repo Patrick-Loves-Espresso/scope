@@ -580,6 +580,52 @@ def test_review_packet_binds_owned_inputs_and_apply_rejects_drift(tmp_path: Path
     ]) == 1
 
 
+def test_completed_review_remains_portable_after_installed_template_disappears(
+    tmp_path: Path,
+) -> None:
+    repo, epic, run = _fixture(tmp_path)
+    _approve_product(epic, run)
+    packet = _create_packet(epic, run)
+    receipt = _receipt(repo, packet)
+    assert VALIDATOR.main([
+        "apply-review-receipt", str(epic), str(receipt), "--run", str(run)
+    ]) == 0
+    (repo / "review-template.md").unlink()
+    errors = VALIDATOR.RefinementValidator(
+        epic, "review", repo_root=repo
+    ).validate()
+    assert not any("review template" in error for error in errors)
+
+
+def test_final_handoff_boundary_includes_transitive_resolution_evidence(
+    tmp_path: Path,
+) -> None:
+    repo, epic, _ = _fixture(tmp_path)
+    external = repo / "docs/evidence/correction.md"
+    external.parent.mkdir(parents=True)
+    external.write_text("verified correction\n", encoding="utf-8")
+    (epic / "refinement-review.md").write_text("# Review\n", encoding="utf-8")
+    finding = _corrected_finding(repo, epic)
+    external_relative = _relative(external, repo)
+    finding["resolution"]["affected_paths"].append(external_relative)
+    finding["resolution"]["affected_path_hashes"][external_relative] = _sha(external)
+    finding["resolution"]["checks"][0]["evidence_hashes"] = {
+        external_relative: _sha(external)
+    }
+    _dump(
+        epic / "refinement-findings.yaml",
+        {"schema_version": 1, "epic_id": "E-001", "findings": [finding]},
+    )
+    validator = VALIDATOR.RefinementValidator(epic, "review", repo_root=repo)
+    validator.manifest = yaml.safe_load((epic / "delivery-manifest.yaml").read_text())
+    validator.findings = yaml.safe_load(
+        (epic / "refinement-findings.yaml").read_text()
+    )
+    assert external.resolve() in {
+        path.resolve() for path in validator._gate_paths("final_handoff")
+    }
+
+
 def test_targeted_packet_binds_findings_and_apply_rejects_target_row_drift(
     tmp_path: Path, capsys: object
 ) -> None:
@@ -1326,3 +1372,34 @@ def test_policy_has_only_canonical_lifecycle_artifacts() -> None:
     assert "gate_approvals:" not in text
     assert "correction_checks:" not in text
     assert "rejected" not in policy["findings"]["statuses"]
+
+
+@pytest.mark.parametrize('severity,terminal', [('minor', 'deferred'), ('major', 'corrected'), ('blocking', 'corrected')])
+def test_minor_optional_only_after_third_completed_review(tmp_path: Path, severity: str, terminal: str) -> None:
+    repo, epic, run = _fixture(tmp_path)
+    _approve_product(epic, run)
+    full = _create_packet(epic, run)
+    receipt = _receipt(repo, full)
+    assert VALIDATOR.main(['apply-review-receipt', str(epic), str(receipt), '--run', str(run)]) == 0
+    finding = _corrected_finding(repo, epic)
+    finding['severity'] = severity
+    ledger = epic / 'refinement-findings.yaml'
+    _dump(ledger, {'schema_version': 1, 'epic_id': 'E-001', 'findings': [finding]})
+    for expected in ('corrected', terminal):
+        packet = _create_packet(epic, run, 'targeted', '--target-fingerprint', finding['fingerprint'])
+        check = {'fingerprint': finding['fingerprint'], 'outcome': 'still_open', 'evidence': 'defect remains',
+                 'source_candidate_ids': finding['source_candidate_ids'], 'closure_test': finding['closure_test']}
+        receipt = _receipt(repo, packet, verifications={'codex': [check]})
+        assert VALIDATOR.main(['apply-review-receipt', str(epic), str(receipt), '--run', str(run)]) == 0
+        finding = yaml.safe_load(ledger.read_text())['findings'][0]
+        assert finding['status'] == expected
+    state = yaml.safe_load((epic / 'refinement-state.yaml').read_text())
+    assert len(state['completed_review_ids']) == 3
+    assert (state['status'] == 'ready_for_final_approval') == (severity == 'minor')
+    if severity == 'minor':
+        assert VALIDATOR.RefinementValidator(epic, 'review', repo_root=repo).validate() == []
+        assert VALIDATOR.main(['render-summary', str(epic), '--run', str(run)]) == 0
+        assert 'deferred' in (epic / 'refinement-review.md').read_text()
+        finding['severity'] = 'major'
+        _dump(ledger, {'schema_version': 1, 'epic_id': 'E-001', 'findings': [finding]})
+        assert any('only minor' in error for error in VALIDATOR.RefinementValidator(epic, 'review', repo_root=repo).validate())

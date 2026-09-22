@@ -13,7 +13,7 @@ Resolve the installed Scope root once from the checkout where the command starts
 
 - Codex plugin root: `./plugins/scope/`
 
-When an implementation command creates or resumes `./worktree/{epic-id}`, retain
+When an implementation command creates or resumes `./wip/{epic-id}`, retain
 that absolute installed root; ignored plugin files are not copied by Git
 worktree creation. If a new command starts inside a worktree, require an
 installation in that checkout and stop if none exists—do not silently choose an
@@ -47,7 +47,7 @@ Execution steps:
 4. Read governance files when the command or role requires them.
 5. Execute the command as a Codex workflow, preserving its product-contract,
    material-decision, and final-handoff authority boundaries.
-6. Write or update project artifacts in `docs/`, `.scope/`, and `./worktree/` as the command specifies.
+6. Write or update project artifacts in `docs/`, `.scope/`, and `./wip/` as the command specifies.
 
 ### Nested Scope Command Execution
 
@@ -102,7 +102,7 @@ orchestrating context.
 - Preserve the two refinement gates and stop for any material decision the
   command assigns to the user. Honor only an explicit per-epic preapproval.
 - Use git worktrees exactly as Scope specifies for implementation commands.
-- For Codex, the implementation worktree root is `./worktree/`.
+- For Codex, the implementation worktree root is `./wip/`.
 - Keep implementation in the worktree once a command moves there.
 - Do not rebind the retained Scope root after moving into a worktree.
 
@@ -118,7 +118,7 @@ not configure or invoke a CodeGraph MCP for Scope work.
 CodeGraph is scoped to the active repository/worktree root.
 
 - During refinement and planning, use the main repository root as the CodeGraph project path.
-- During implementation and audit, after the workflow changes into `./worktree/{epic-id}`, use that worktree as the CodeGraph project path.
+- During implementation and audit, after the workflow changes into `./wip/{epic-id}`, use that worktree as the CodeGraph project path.
 - Do not query the main repo CodeGraph DB for implementation code that is being changed inside a worktree.
 - The worker runner loads `config/codegraph-policy.yaml`, verifies the CLI
   version, initializes a missing index only when its directory is Git-ignored,

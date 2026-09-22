@@ -167,15 +167,23 @@ def _validate_seal_shape(seal: Mapping[str, Any], policy: Mapping[str, Any]) -> 
         raise WrapError("delivery seal summary path is invalid")
     _sha256(summary.get("sha256"), "delivery seal summary hash")
 
-    job = _exact_keys(
-        seal.get("summary_job"),
-        {"job_id", "result_sha256", "after_snapshot_sha256"},
-        "delivery seal summary job",
-    )
-    if not isinstance(job.get("job_id"), str) or not job["job_id"]:
-        raise WrapError("delivery seal summary job ID is invalid")
-    _sha256(job.get("result_sha256"), "delivery seal summary result hash")
-    _sha256(job.get("after_snapshot_sha256"), "delivery seal summary snapshot hash")
+    provenance = seal.get("summary_job")
+    if isinstance(provenance, dict) and provenance.get("method") == "deterministic-v1":
+        _exact_keys(provenance, {"method", "summary_sha256", "inputs_sha256"}, "summary provenance")
+        for field in ("summary_sha256", "inputs_sha256"):
+            _sha256(provenance.get(field), f"summary provenance {field}")
+        if provenance["summary_sha256"] != summary["sha256"]:
+            raise WrapError("summary provenance does not bind summary")
+    else:
+        job = _exact_keys(
+            seal.get("summary_job"),
+            {"job_id", "result_sha256", "after_snapshot_sha256"},
+            "delivery seal summary job",
+        )
+        if not isinstance(job.get("job_id"), str) or not job["job_id"]:
+            raise WrapError("delivery seal summary job ID is invalid")
+        _sha256(job.get("result_sha256"), "delivery seal summary result hash")
+        _sha256(job.get("after_snapshot_sha256"), "delivery seal summary snapshot hash")
 
     workspace = _exact_keys(
         seal.get("workspace"),
@@ -451,9 +459,57 @@ def _validate_audit(
         raise WrapError("latest PASS audit is invalid: " + "; ".join(unexpected))
 
 
+def _summary_inputs(epic: Path, summary: Path) -> dict[str, str]:
+    inputs = {name: scope_fingerprint.file_sha256(epic / name)
+              for name in ("delivery-manifest.yaml", "implementation-evidence.yaml", "audit-findings.yaml", "epic_audit.md")}
+    return {"method": "deterministic-v1", "summary_sha256": scope_fingerprint.file_sha256(summary),
+            "inputs_sha256": scope_fingerprint.structured_sha256(inputs)}
+
+
+def render_summary(args: argparse.Namespace) -> dict[str, Any]:
+    policy = _policy(args.policy)
+    run, repository_root, root = _canonical_run(args.run, policy)
+    epic = _active_epic(args.epic_dir, run, root)
+    with scope_git.mutation_locks([root]):
+        _reject_active_runs(repository_root, [root])
+        attempt_path, attempt = _latest_attempt(epic, policy)
+        summary = _safe_child(epic, str(policy["paths"]["summary"]), "implementation summary", required=False)
+        _validate_audit(epic, root, attempt_path, attempt, summary.relative_to(root).as_posix(),
+                        (epic / policy["paths"]["seal"]).relative_to(root).as_posix(), args.audit_policy.resolve())
+        manifest = _load_yaml(epic / "delivery-manifest.yaml", "delivery manifest")
+        if manifest.get("schema_version") != 3:
+            raise WrapError("deterministic summary requires manifest v3; keep older epics on their pinned runtime")
+        evidence = _load_yaml(epic / "implementation-evidence.yaml", "implementation evidence")
+        findings = _load_yaml(epic / "audit-findings.yaml", "audit findings")
+        lines = [f"# Implementation summary — {run['epic_id']}", "", f"Audit: PASS ({attempt['attempt_id']}).", "",
+                 "| Story | Status | Executed proofs | Declared unavailable proofs |", "| --- | --- | --- | --- |"]
+        for row in evidence["stories"]:
+            lines.append(
+                f"| {row['story_id']} | {row['status']} | "
+                f"{', '.join(p['proof_id'] for p in row['proofs'])} | "
+                f"{', '.join(row.get('external_blocked_proof_ids', []))} |"
+            )
+        lines += ["", "## Findings", ""]
+        lines.extend(f"- {row['id']}: {row['status']} — {row['title']}" for row in findings.get("findings", []))
+        lines += ["", "## Changed files", ""]
+        lines.extend(f"- {row['path']}" for row in evidence["attributed_delta"])
+        lines += ["", "Proof counts, raw logs, and context fingerprints are in implementation-evidence.yaml.",
+                  "The approved manifest and audit receipts define the delivered scope.", ""]
+        _atomic_write(summary, "\n".join(lines).encode("utf-8"), temporary_directory=scope_git.runtime_directory(root, "scope-wrap"))
+        run["delivery_summary"] = _summary_inputs(epic, summary)
+        _atomic_write(args.run, _dump_yaml(run))
+        return {"status": "rendered", "summary": str(summary), **run["delivery_summary"]}
+
+
 def _summary_job(
     run: Mapping[str, Any], repository_root: Path, summary_relative: str, summary: Path
 ) -> dict[str, str]:
+    manifest = _load_yaml(summary.parent / "delivery-manifest.yaml", "delivery manifest")
+    if manifest.get("schema_version") == 3:
+        provenance = run.get("delivery_summary")
+        if not isinstance(provenance, dict) or provenance != _summary_inputs(summary.parent, summary):
+            raise WrapError("deterministic delivery summary is missing or stale; run render-summary")
+        return provenance
     jobs = run["completed_jobs"]
     if not jobs or not isinstance(jobs[-1], dict):
         raise WrapError("implement run has no completed delivery-summary job")
@@ -1174,6 +1230,13 @@ def commit_merge(args: argparse.Namespace) -> dict[str, Any]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    summary = subparsers.add_parser("render-summary", help="Render the delivery summary from validated evidence")
+    summary.add_argument("epic_dir", type=Path)
+    summary.add_argument("--run", type=Path, required=True)
+    summary.add_argument("--policy", type=Path, default=_default_policy())
+    summary.add_argument("--audit-policy", type=Path, default=_default_audit_policy())
+    summary.set_defaults(handler=render_summary)
 
     seal = subparsers.add_parser("seal", help="Seal one validated delivery-summary overlay")
     seal.add_argument("epic_dir", type=Path)

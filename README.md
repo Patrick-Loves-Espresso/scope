@@ -17,7 +17,7 @@ Codex: idea → scope:prd_create → scope:prd_refine → scope:prd_breakdown �
 Scope includes deterministic Python validators and a bounded worker runner.
 `epic_refine`, `implement`, and `audit_epic` remain conversational: the public
 command owns every user decision while fresh worker processes perform one
-phase, story, correction batch, or audit synthesis at a time. Independent
+product contract, design/handoff, story group, or correction batch at a time. Independent
 reviewers remain separate and read-only. You never need to enter a worker
 thread. Worker model/effort routing is provider-local, with explicit quality
 and budget profiles; cross-provider choices are limited to independent review.
@@ -26,6 +26,29 @@ durable review evidence. CodeGraph 1.5+ is an optional CLI-only accelerator:
 Scope prepares one Git-ignored index per command run, incrementally refreshes it
 between implementation write jobs, and falls back to direct inspection without
 weakening proof when unavailable. Other MCP servers remain optional.
+
+Newly refined epics use manifest v3: dependency-connected groups of up to three
+stories, runner-owned proof execution, and deterministic audit synthesis and
+summaries. Two pre-audit debugging jobs are allowed per implementation run.
+Minors must be addressed after the first two refinement reviews; remaining
+minors become visibly deferred after the third completed review. Audit retains
+one full and one targeted review, with minors mandatory in both.
+
+Product refinement and diagnostic workers use Sol (`gpt-5.6-sol`) or Opus 5
+(`claude-opus-5`) at high effort in both quality and budget profiles. Use those
+models at high effort for the user-facing orchestrator too; select the session
+model in the host, since worker policies do not change it. Design/handoff,
+corrections, implementation, remediation, debugging, and independent reviewers
+retain Astra (`gpt-6-astra`) or Fable (`claude-fable-5-1`) at their existing efforts.
+The standard audit retains Gemini as its third independent reviewer. Muse Spark
+(`meta/muse-spark-1.3-contributor`, variant `high`) is optional and expanded-only.
+Evaluate the cheaper routes on a new epic before extending them to other phases;
+equivalent quality and quota savings have not yet been measured in Scope.
+
+Keep approved or running older epics on their approving Scope version. Do not
+rewrite their hash-bound manifests or evidence. See
+[the execution contract](docs/scope-modernization.md) for proof formats,
+compatibility and the next-epic evaluation checklist.
 
 **NOTE:** for Codex, replace "/" with "run scope:"
 
@@ -65,7 +88,7 @@ provider processes for bounded repository work:
 
 - **Slash commands** (`.claude/commands/`) define multi-phase workflows with approval gates
 - **Agent definitions** (`.claude/agents/`) provide standalone architect, developer, product-owner, and reverse-engineering roles
-- **Worker contracts** (`.claude/workers/`) isolate refinement, implementation, and audit-synthesis jobs
+- **Worker contracts** (`.claude/workers/`) isolate refinement and implementation jobs
 - **Skills** (`.claude/skills/`) provide documentation templates (Arc42+C4 for technical, Atlassian Blueprint for product)
 - **Public commands** retain story dependencies, user gates, and sequencing while bounded workers execute one job at a time
 - **Git worktrees** isolate implementation from the main branch
@@ -74,7 +97,7 @@ provider processes for bounded repository work:
 
 - **commands** (`plugins/scope/commands/`) define multi-phase workflows with approval gates
 - **Agent definitions** (`plugins/scope/agents/`) provide standalone architect, developer, product-owner, and reverse-engineering roles
-- **Worker contracts** (`plugins/scope/workers/`) isolate refinement, implementation, and audit-synthesis jobs
+- **Worker contracts** (`plugins/scope/workers/`) isolate refinement and implementation jobs
 - **Skills** (`plugins/scope/skills/`) provide documentation templates (Arc42+C4 for technical, Atlassian Blueprint for product)
 - **Public commands** retain story dependencies, user gates, and sequencing while bounded workers execute one job at a time
 - **Git worktrees** isolate implementation from the main branch
@@ -215,7 +238,7 @@ your-project/
 │   ├── architecture/       # Technical docs (Arc42 sections 01-13)
 │   ├── epics/{epic-id}/    # Per-epic contract, design, story plans, and evidence
 │   └── releases/           # Release documentation
-├── worktree/
+├── wip/
 │   └── {epic-id}/          # Git worktree per epic (implementation happens here)
 └── src/                    # Your application code
 ```
@@ -243,7 +266,7 @@ conversations.
 **Git worktrees** — After the refinement handoff is approved, `/implement`
 automatically checkpoints only its resolved epic and native-contract paths with
 the fixed `refine({epic-id}): implementation handoff` label. It then creates
-`worktree/{epic-id}` on branch `epic/{epic-id}` without another confirmation prompt.
+`wip/{epic-id}` on branch `epic/{epic-id}` without another confirmation prompt.
 An exact, validated dependency commit may also be integrated automatically with
 the fixed `merge({epic-id}): integrate {dependency-epic-id} implementation
 baseline` label when the worktree is clean and the merge is conflict-free.
@@ -270,6 +293,15 @@ stdout; no PTY wrapper is involved. Windows CI validates installed assets and
 one Codex supervisor-recovery path, but this local macOS validation did not
 produce a Windows execution receipt. Windows is not a validated Claude worker
 or reviewer runtime.
+
+## Repository validation
+
+Install `requirements-dev.txt` and run `./scripts/validate-pr-checks.sh` before
+committing. The gate runs the unit suite with subprocess-aware line coverage
+over all Python files in `src_shared/scripts`, targeting 90% and enforcing an
+85% minimum. It clears prior coverage data on each run and stores new coverage
+data under `tmp_debug/`. No production files are excluded to meet
+the threshold.
 
 ## License
 

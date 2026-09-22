@@ -41,7 +41,6 @@
       "anyOf": [
         {"$ref": "#/$defs/refinement_payload"},
         {"$ref": "#/$defs/implementation_payload"},
-        {"$ref": "#/$defs/audit_payload"},
         {"$ref": "#/$defs/diagnostic_payload"}
       ]
     }
@@ -144,65 +143,6 @@
         "proof_evidence": {
           "type": "array",
           "items": {"$ref": "#/$defs/proof_evidence"}
-        }
-      }
-    },
-    "finding": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "source_ids",
-        "fingerprint",
-        "severity",
-        "category",
-        "disposition",
-        "title",
-        "evidence",
-        "affected_paths",
-        "closure_test"
-      ],
-      "properties": {
-        "source_ids": {
-          "type": "array",
-          "minItems": 1,
-          "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
-        },
-        "fingerprint": {"type": "string", "minLength": 1},
-        "severity": {"type": "string", "enum": ["blocking", "major", "minor"]},
-        "category": {"type": "string", "minLength": 1},
-        "disposition": {
-          "type": "string",
-          "enum": [
-            "remediation_required",
-            "user_decision",
-            "documentation_decision",
-            "accepted_risk"
-          ]
-        },
-        "title": {"type": "string", "minLength": 1},
-        "evidence": {
-          "type": "array",
-          "minItems": 1,
-          "items": {"type": "string", "minLength": 1}
-        },
-        "affected_paths": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {"type": "string", "minLength": 1}
-        },
-        "closure_test": {"type": "string", "minLength": 1}
-      }
-    },
-    "audit_payload": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["kind", "findings"],
-      "properties": {
-        "kind": {"type": "string", "const": "audit"},
-        "findings": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/finding"}
         }
       }
     },

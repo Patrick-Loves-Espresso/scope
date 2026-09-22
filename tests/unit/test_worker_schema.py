@@ -19,7 +19,7 @@ def _errors(schema: dict, value: dict) -> list:
 
 
 def _job(role: str = "implementation") -> dict:
-    phase = {"implementation": "story", "refinement": "design", "audit": "merge_findings", "diagnostic": "investigate"}[role]
+    phase = {"implementation": "story", "refinement": "design_handoff", "diagnostic": "investigate"}[role]
     command = "epic_refine" if role == "refinement" else "implement"
     job = {
         "schema_version": 2,
@@ -32,10 +32,10 @@ def _job(role: str = "implementation") -> dict:
         "working_root": "/repo",
         "scope_root": "/scope",
         "read_scope": ["."],
-        "write_scope": [] if role in {"audit", "diagnostic"} else ["."],
+        "write_scope": [] if role in {"diagnostic"} else ["."],
         "artifacts": [{"kind": "manifest", "path": "docs/manifest.yaml", "sha256": HASH}],
         "decision_refs": [{"id": "PDR-1", "path": "docs/state.yaml", "sha256": HASH}],
-        "required_validations": [] if role in {"audit", "diagnostic"} else [{"command": "pytest -q", "purpose": "proof"}],
+        "required_validations": [] if role in {"diagnostic"} else [{"command": "pytest -q", "purpose": "proof"}],
         "required_proof_ids": [],
         "result_path": "/repo/tmp_debug/scope-runs/gd-001/implement/jobs/gd-001-job-001/result.json",
     }
@@ -62,7 +62,7 @@ def _result(role: str = "implementation") -> dict:
         "job_id": "gd-001-job-001",
         "status": "completed",
         "summary": "completed bounded work",
-        "changed_paths": [] if role in {"audit", "diagnostic"} else ["src/value.py"],
+        "changed_paths": [] if role in {"diagnostic"} else ["src/value.py"],
         "validations": [],
         "questions": [],
         "issues": [],
@@ -71,7 +71,7 @@ def _result(role: str = "implementation") -> dict:
 
 
 def test_v2_jobs_validate_for_every_role() -> None:
-    for role in ("refinement", "implementation", "audit", "diagnostic"):
+    for role in ("refinement", "implementation", "diagnostic"):
         assert not _errors(JOB_SCHEMA, _job(role))
 
 
@@ -103,20 +103,20 @@ def test_job_requires_unique_required_proof_ids() -> None:
     job = _job()
     job["required_proof_ids"] = ["P-1", "P-1"]
     assert _errors(JOB_SCHEMA, job)
-    job = _job("audit")
+    job = _job("diagnostic")
     job["required_proof_ids"] = ["P-1"]
     assert _errors(JOB_SCHEMA, job)
 
 
 def test_read_only_roles_reject_writes_and_validations() -> None:
-    job = _job("audit")
+    job = _job("diagnostic")
     job["write_scope"] = ["docs"]
     job["required_validations"] = [{"command": "pytest", "purpose": "wrong"}]
     assert _errors(JOB_SCHEMA, job)
 
 
 def test_v2_results_validate_for_every_role() -> None:
-    for role in ("refinement", "implementation", "audit", "diagnostic"):
+    for role in ("refinement", "implementation", "diagnostic"):
         assert not _errors(RESULT_SCHEMA, _result(role))
 
 
@@ -158,7 +158,7 @@ def test_counts_exist_only_in_implementation_proof_evidence() -> None:
     assert _errors(RESULT_SCHEMA, result)
 
 
-def test_audit_payload_uses_canonical_vocabulary() -> None:
+def test_retired_audit_payload_is_rejected() -> None:
     result = _result("audit")
     finding = {
         "source_ids": ["review-1:F-1"], "fingerprint": "abc", "severity": "blocking",
@@ -166,7 +166,7 @@ def test_audit_payload_uses_canonical_vocabulary() -> None:
         "evidence": ["review output"], "affected_paths": ["src/tool.py"], "closure_test": "pytest -q",
     }
     result["payload"]["findings"] = [finding]
-    assert not _errors(RESULT_SCHEMA, result)
+    assert _errors(RESULT_SCHEMA, result)
     for invalid in ("critical", "info"):
         candidate = deepcopy(result)
         candidate["payload"]["findings"][0]["severity"] = invalid

@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,8 @@ if SCRIPT_DIRECTORY not in sys.path:
 import scope_fingerprint  # noqa: E402
 import scope_git  # noqa: E402
 
+
+import scope_snapshot
 
 SHA256_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 VALIDATION_PHASES = ("pre_review", "complete")
@@ -546,8 +549,8 @@ def verify_implementation_evidence(
         )
     except ValueError as exc:
         return [str(exc)], {}, {}
-    if manifest.get("schema_version") not in {1, 2}:
-        errors.append("delivery manifest schema_version must be 1 or 2")
+    if manifest.get("schema_version") not in {1, 2, 3}:
+        errors.append("delivery manifest schema_version must be 1, 2, or 3")
     if evidence.get("schema_version") != policy.get("implementation_evidence_version"):
         errors.append("implementation evidence schema_version does not match policy")
     epic_id = manifest.get("epic_id")
@@ -786,7 +789,7 @@ def prepare(args: argparse.Namespace) -> int:
                     {
                         "id": f"closure:{finding_id}",
                         "kind": "closure",
-                        "command": finding.get("closure_test"),
+                        "command": shlex.join(finding["remediation"]["execution"]["argv"]) if manifest.get("schema_version") == 3 and finding.get("remediation", {}).get("execution") else finding.get("closure_test"),
                         "status": "pending",
                         "result": None,
                         "authority_id": None,
@@ -825,6 +828,8 @@ def prepare(args: argparse.Namespace) -> int:
         packet_path = attempt_dir / str(policy.get("paths", {}).get("review_packet"))
         attempt_dir.mkdir(parents=True, exist_ok=False)
         _atomic_write_yaml_documents([(packet_path, packet)])
+        if manifest.get("schema_version") == 3:
+            packet["replay_snapshot"] = scope_snapshot.retain(working_root, epic_dir, attempt_id)
         attempt = {
             "schema_version": policy.get("attempt_version"),
             "epic_id": manifest.get("epic_id"),
@@ -949,6 +954,53 @@ def _authority(
     )
 
 
+def execute_gates(args: argparse.Namespace) -> int:
+    import scope_proofs
+    epic = args.epic_dir.resolve()
+    with _mutation_guard(args.run, epic) as (run, root, _):
+        attempt_dir = _inside(args.attempt_dir.resolve(), epic / "reviews", "attempt directory")
+        attempt_path = attempt_dir / "audit-attempt.yaml"
+        attempt = _load_yaml(attempt_path, "audit attempt")
+        _require_attempt_epic(run, attempt)
+        errors = _current_attempt_boundary(attempt, epic, root)
+        if errors:
+            raise ValueError("; ".join(errors))
+        manifest = _load_yaml(epic / "delivery-manifest.yaml", "delivery manifest")
+        if manifest.get("schema_version") != 3:
+            raise ValueError("execute-gates requires manifest v3; keep older approved epics on their pinned runtime")
+        planned = {row["id"]: row for row in manifest["proofs"]}
+        proofs = []
+        for gate in attempt["gates"]:
+            if gate["status"] != "pending":
+                continue
+            if gate["kind"] == "closure":
+                target = next(row for row in attempt["target_findings"] if "closure:" + row["id"] == gate["id"])
+                matches = [row for row in manifest["proofs"] if row.get("command") == gate["command"]]
+                execution = target["remediation"].get("execution")
+                if execution is not None:
+                    proof = {"id": gate["id"], "command": gate["command"], "level": target["remediation"].get("proof_level", "unit"), "execution": execution}
+                elif matches:
+                    proof = {**matches[0], "id": gate["id"]}
+                else:
+                    raise ValueError(f"closure gate {gate['id']} requires a hash-bound remediation.execution contract")
+            else:
+                proof = planned[gate["id"]]
+            proofs.append(proof)
+        evidence = _load_yaml(epic / "implementation-evidence.yaml", "implementation evidence")
+        reuse = [proof for row in evidence["stories"] for proof in row["proofs"]]
+        receipt = scope_proofs.execute(proofs, root, epic, scope_proofs.policy(Path(run["scope_root"])), reuse=reuse)
+        by_id = {row["proof_id"]: row for row in receipt["proofs"]}
+        for gate in attempt["gates"]:
+            if gate["id"] in by_id:
+                result = by_id[gate["id"]]
+                gate.update(status=result["outcome"], result=result, recorded_at=_now(), reason=result["summary"] if result["outcome"] == "blocked" else None)
+        attempt["proof_execution"] = {key: receipt[key] for key in ("path", "sha256", "duration_seconds")}
+        attempt["updated_at"] = _now()
+        _atomic_write_yaml_documents([(attempt_path, attempt)])
+        print(f"Audit gates: {receipt['status']} ({receipt['path']})")
+        return 0 if receipt["status"] == "pass" else 1
+
+
 def record_gate(args: argparse.Namespace) -> int:
     epic_dir = args.epic_dir.resolve()
     with _mutation_guard(args.run, epic_dir) as (run, working_root, _):
@@ -967,6 +1019,9 @@ def record_gate(args: argparse.Namespace) -> int:
         if len(matches) != 1:
             raise ValueError(f"unknown or duplicate audit gate: {args.gate}")
         gate = matches[0]
+        manifest = _load_yaml(epic_dir / "delivery-manifest.yaml", "delivery manifest")
+        if manifest.get("schema_version") == 3 and args.status in {"pass", "fail"}:
+            raise ValueError("manifest v3 gate results are executor-owned; use execute-gates")
         if gate.get("status") != "pending":
             requested = {
                 "status": args.status,
@@ -1230,12 +1285,14 @@ def _source_from_candidate(
     if not isinstance(affected, list) or any(not isinstance(item, str) for item in affected):
         raise ValueError(f"audit candidate {source_id} has invalid affected paths")
     return source_id, {
+        "title": row.get("title") or row.get("impact") or fingerprint,
         "fingerprint": fingerprint,
         "severity": severity,
         "category": category,
         "disposition": disposition,
         "evidence": evidence,
         "affected_paths": affected,
+        "affected_acceptance_ids": row.get("affected_acceptance_ids", []),
         "closure_test": closure,
         "detected_by": [row.get("provider")],
     }
@@ -1248,40 +1305,6 @@ def _next_finding_id(rows: Sequence[Mapping[str, Any]]) -> str:
         if match:
             numbers.append(int(match.group(1)))
     return f"AF-{max(numbers, default=0) + 1:03d}"
-
-
-def _completed_job(
-    run: Mapping[str, Any], result_path: Path, repository_root: Path
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    result_path = result_path.resolve()
-    matches: list[dict[str, Any]] = []
-    for row in run.get("completed_jobs", []):
-        if not isinstance(row, dict):
-            continue
-        raw = row.get("result_path")
-        if not isinstance(raw, str):
-            continue
-        candidate = Path(raw)
-        if not candidate.is_absolute():
-            candidate = repository_root / candidate
-        if candidate.resolve() == result_path:
-            matches.append(row)
-    if len(matches) != 1:
-        raise ValueError("synthesis result must match exactly one completed run job")
-    row = matches[0]
-    if row.get("status") != "completed":
-        raise ValueError("synthesis run job is not completed")
-    if row.get("result_sha256") != _file_sha256(result_path):
-        raise ValueError("synthesis result hash does not match completed run job")
-    result = _load_yaml(result_path, "audit worker result") if result_path.suffix in {".yaml", ".yml"} else json.loads(result_path.read_text(encoding="utf-8"))
-    if not isinstance(result, dict):
-        raise ValueError("audit worker result must be a mapping")
-    if result.get("schema_version") != 2 or result.get("status") != "completed":
-        raise ValueError("audit worker result must be a completed v2 result")
-    payload = result.get("payload")
-    if not isinstance(payload, dict) or payload.get("kind") != "audit":
-        raise ValueError("audit worker result payload.kind must be audit")
-    return row, result
 
 
 def apply_synthesis(args: argparse.Namespace) -> int:
@@ -1442,6 +1465,7 @@ def apply_synthesis(args: argparse.Namespace) -> int:
                 continue
             source_id = f"gate:{gate.get('id')}"
             sources[source_id] = {
+                "title": f"Required gate {gate.get('id')} {gate.get('status')}",
                 "fingerprint": f"deterministic-{gate.get('id')}",
                 "severity": "blocking" if gate.get("status") == "blocked" else "major",
                 "category": "testability",
@@ -1471,114 +1495,46 @@ def apply_synthesis(args: argparse.Namespace) -> int:
             if not isinstance(row, dict):
                 continue
             sources[f"ledger:{finding_id}"] = {
+                "title": row.get("title"),
                 "fingerprint": row.get("fingerprint"),
                 "severity": row.get("severity"),
                 "category": row.get("category"),
                 "disposition": row.get("disposition"),
                 "evidence": row.get("evidence", []),
                 "affected_paths": row.get("affected_paths", []),
+                "affected_acceptance_ids": row.get("affected_acceptance_ids", []),
                 "closure_test": row.get("closure_test"),
                 "detected_by": row.get("detected_by", []),
             }
-        job, result = _completed_job(run, args.result.resolve(), repository_root)
-        proposals = result.get("payload", {}).get("findings")
-        if not isinstance(proposals, list) or any(not isinstance(row, dict) for row in proposals):
-            raise ValueError("audit result payload.findings must be a list of mappings")
-        consumed: list[str] = []
-        grouped: dict[str, list[dict[str, Any]]] = {}
-        for proposal in proposals:
-            fingerprint = proposal.get("fingerprint")
-            if not isinstance(fingerprint, str) or not fingerprint:
-                raise ValueError("audit proposal fingerprint must be non-empty")
-            grouped.setdefault(fingerprint, []).append(proposal)
-        severity_order = policy.get("findings", {}).get("severities", [])
+        # Identical fingerprints are the only admissible merge key. No model is
+        # needed to union sources, select maximum severity, or enforce conflicts.
+        grouped: dict[str, list[str]] = {}
+        for source_id in sorted(sources):
+            grouped.setdefault(str(sources[source_id]["fingerprint"]), []).append(source_id)
+        severity_order = policy["findings"]["severities"]
         normalized: list[dict[str, Any]] = []
-        for fingerprint, proposal_rows in grouped.items():
-            dispositions = {row.get("disposition") for row in proposal_rows}
-            if len(dispositions) != 1:
-                raise ValueError(f"conflicting proposal dispositions block synthesis: {fingerprint}")
-            source_ids: list[str] = []
-            for proposal in proposal_rows:
-                raw_ids = proposal.get("source_ids")
-                if not isinstance(raw_ids, list) or not raw_ids or any(not isinstance(item, str) for item in raw_ids):
-                    raise ValueError(f"audit proposal {fingerprint} requires source_ids")
-                source_ids.extend(raw_ids)
-            source_ids = list(dict.fromkeys(source_ids))
-            if any(source_id not in sources for source_id in source_ids):
-                unknown = sorted(set(source_ids) - set(sources))
-                raise ValueError(f"audit proposal references unknown sources: {unknown}")
-            if any(sources[source_id].get("fingerprint") != fingerprint for source_id in source_ids):
-                raise ValueError(f"audit proposal merges different fingerprints: {fingerprint}")
-            source_dispositions = {sources[source_id].get("disposition") for source_id in source_ids}
-            if len(source_dispositions) != 1:
-                raise ValueError(f"conflicting source dispositions block synthesis: {fingerprint}")
-            disposition = next(iter(dispositions))
-            if disposition == "accepted_risk":
-                if not any(
-                    _authority(attempt, row.get("id"), "accepted_risk", fingerprint)
-                    for row in attempt.get("authorities", [])
-                    if isinstance(row, dict)
-                ):
-                    raise ValueError(f"accepted risk lacks hash-bound authority: {fingerprint}")
-            elif disposition != next(iter(source_dispositions)):
-                raise ValueError(f"audit proposal disposition contradicts sources: {fingerprint}")
-            if disposition not in policy.get("findings", {}).get("dispositions", []):
-                raise ValueError(f"audit proposal has invalid disposition: {disposition}")
-            source_categories = {sources[source_id].get("category") for source_id in source_ids}
-            if len(source_categories) != 1:
-                raise ValueError(f"audit proposal merges different categories: {fingerprint}")
-            category = proposal_rows[0].get("category")
-            if category != next(iter(source_categories)):
-                raise ValueError(f"audit proposal category contradicts sources: {fingerprint}")
-            source_closures = {sources[source_id].get("closure_test") for source_id in source_ids}
-            if len(source_closures) != 1 or proposal_rows[0].get("closure_test") != next(iter(source_closures)):
-                raise ValueError(f"audit proposal closure_test contradicts sources: {fingerprint}")
-            severity = severity_order[
-                max(severity_order.index(sources[source_id].get("severity")) for source_id in source_ids)
-            ]
-            evidence = list(
-                dict.fromkeys(
-                    item
-                    for source_id in source_ids
-                    for item in sources[source_id].get("evidence", [])
-                )
-            )
-            affected_paths = list(
-                dict.fromkeys(
-                    item
-                    for source_id in source_ids
-                    for item in sources[source_id].get("affected_paths", [])
-                )
-            )
-            title = proposal_rows[0].get("title")
-            if not isinstance(title, str) or not title:
-                raise ValueError(f"audit proposal {fingerprint} requires title")
-            normalized.append(
-                {
-                    "fingerprint": fingerprint,
-                    "severity": severity,
-                    "category": category,
-                    "disposition": disposition,
-                    "title": title,
-                    "evidence": evidence,
-                    "affected_paths": affected_paths,
-                    "closure_test": proposal_rows[0].get("closure_test"),
-                    "source_ids": source_ids,
-                    "detected_by": list(
-                        dict.fromkeys(
-                            provider
-                            for source_id in source_ids
-                            for provider in sources[source_id].get("detected_by", [])
-                        )
-                    ),
-                }
-            )
-            consumed.extend(source_ids)
-        if len(consumed) != len(set(consumed)):
-            raise ValueError("one audit source was consumed by multiple proposals")
-        if set(consumed) != set(sources):
-            missing = sorted(set(sources) - set(consumed))
-            raise ValueError(f"audit synthesis dropped valid sources: {missing}")
+        for fingerprint, source_ids in sorted(grouped.items()):
+            selected = [sources[source_id] for source_id in source_ids]
+            for field in ("disposition", "category", "closure_test"):
+                if len({row.get(field) for row in selected}) != 1:
+                    raise ValueError(f"conflicting source {field} values block synthesis: {fingerprint}")
+            disposition = selected[0]["disposition"]
+            if any(
+                _authority(attempt, row.get("id"), "accepted_risk", fingerprint)
+                for row in attempt.get("authorities", []) if isinstance(row, dict)
+            ):
+                disposition = "accepted_risk"
+            normalized.append({
+                "fingerprint": fingerprint,
+                "severity": max((row["severity"] for row in selected), key=severity_order.index),
+                "category": selected[0]["category"],
+                "disposition": disposition,
+                "title": selected[0]["title"],
+                "closure_test": selected[0]["closure_test"],
+                "source_ids": source_ids,
+                **{field: sorted({item for row in selected for item in row.get(field, [])})
+                   for field in ("evidence", "affected_paths", "affected_acceptance_ids", "detected_by")},
+            })
         status_by_disposition = policy.get("findings", {}).get("status_by_disposition", {})
         for proposal in normalized:
             existing = by_fingerprint.get(proposal["fingerprint"])
@@ -1607,8 +1563,8 @@ def apply_synthesis(args: argparse.Namespace) -> int:
                 rows.append(row)
                 by_fingerprint[row["fingerprint"]] = row
         attempt["synthesis"] = {
-            "job_id": job.get("job_id"),
-            "result_sha256": job.get("result_sha256"),
+            "method": "deterministic-v1",
+            "sources_sha256": _structured_sha256(sources),
             "source_ids": sorted(sources),
             "findings_sha256": _yaml_sha256(findings),
             "applied_at": _now(),
@@ -1745,11 +1701,10 @@ class AuditValidator:
             if not isinstance(synthesis, dict):
                 errors.append("completed audit requires synthesis metadata")
             else:
-                _string(synthesis.get("job_id"), "audit synthesis job_id", errors)
-                if not isinstance(synthesis.get("result_sha256"), str) or not SHA256_PATTERN.fullmatch(
-                    synthesis.get("result_sha256", "")
-                ):
-                    errors.append("audit synthesis result_sha256 is invalid")
+                if synthesis.get("method") != "deterministic-v1":
+                    errors.append("audit synthesis must use deterministic-v1")
+                if not SHA256_PATTERN.fullmatch(str(synthesis.get("sources_sha256", ""))):
+                    errors.append("audit synthesis sources_sha256 is invalid")
             expected, _ = self.derive_decision()
             if attempt.get("status") != expected or attempt.get("decision", {}).get("outcome") != expected:
                 errors.append(f"audit decision is not the mechanically required outcome: {expected}")
@@ -2005,11 +1960,16 @@ def build_parser() -> argparse.ArgumentParser:
     gate_parser.add_argument("--policy", type=Path, default=_default_policy_path())
     gate_parser.set_defaults(handler=record_gate)
 
-    synthesis_parser = subparsers.add_parser("apply-synthesis", help="Apply one source-bounded audit result")
+    execute_parser = subparsers.add_parser("execute-gates", help="Execute or reuse current approved proof results")
+    execute_parser.add_argument("epic_dir", type=Path)
+    execute_parser.add_argument("attempt_dir", type=Path)
+    execute_parser.add_argument("--run", type=Path, required=True)
+    execute_parser.set_defaults(handler=execute_gates)
+
+    synthesis_parser = subparsers.add_parser("apply-synthesis", help="Synthesize every validated audit source deterministically")
     synthesis_parser.add_argument("epic_dir", type=Path)
     synthesis_parser.add_argument("attempt_dir", type=Path)
     synthesis_parser.add_argument("--run", type=Path, required=True)
-    synthesis_parser.add_argument("--result", type=Path, required=True)
     synthesis_parser.add_argument("--policy", type=Path, default=_default_policy_path())
     synthesis_parser.set_defaults(handler=apply_synthesis)
 

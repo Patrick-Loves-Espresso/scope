@@ -151,7 +151,7 @@ def audit_fingerprint(
     def excluded(relative: str) -> bool:
         if relative in selected:
             return True
-        if relative == "tmp_debug" or relative.startswith("tmp_debug/"):
+        if relative in {"tmp_debug", ".codegraph"} or relative.startswith(("tmp_debug/", ".codegraph/")):
             return True
         if relative in {
             f"{epic_relative}/audit-findings.yaml",
@@ -159,6 +159,6 @@ def audit_fingerprint(
             f"{epic_relative}/implementation-evidence.yaml",
         }:
             return True
-        return relative.startswith(f"{epic_relative}/reviews/audit-")
+        return relative.startswith((f"{epic_relative}/reviews/audit-", f"{epic_relative}/reviews/proofs/"))
 
     return workspace_fingerprint(root, exclude=excluded, include_mode=True)

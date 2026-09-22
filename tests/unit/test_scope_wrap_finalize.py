@@ -102,7 +102,7 @@ def _fixture(
     _git(main, "commit", "-q", "-m", "base")
     _git(main, "branch", "epic/E-001")
 
-    work = tmp_path / "worktree/E-001"
+    work = tmp_path / "wip/E-001"
     work.parent.mkdir()
     _git(main, "worktree", "add", "-q", str(work), "epic/E-001")
     epic = work / "docs/epics" / epic_name
@@ -910,7 +910,6 @@ def test_delivery_overlay_uses_real_completed_audit_validator(
     attempt = audit_tests._prepare(epic, audit_run)
     assert audit_tests._record_pass(epic, attempt, audit_run, epic / "proof.txt") == 0
     audit_tests._receipt(repo, attempt)
-    result = audit_tests._result(repo, audit_run, [])
     assert audit_tests.AUDIT.main(
         [
             "apply-synthesis",
@@ -918,8 +917,6 @@ def test_delivery_overlay_uses_real_completed_audit_validator(
             str(attempt),
             "--run",
             str(audit_run),
-            "--result",
-            str(result),
         ]
     ) == 0
     assert audit_tests.AUDIT.main(

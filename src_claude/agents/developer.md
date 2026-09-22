@@ -2,7 +2,7 @@
 name: developer
 description: Implement production-ready code. Writes both implementation and tests. Retries up to 4x, then escalates.
 # Claude-native implementation default; Codex has a platform-specific model configuration.
-model: sonnet
+model: claude-fable-5-1
 tools: Read, Write, Edit, Bash, Glob, Grep
 phases:
   - name: implementation

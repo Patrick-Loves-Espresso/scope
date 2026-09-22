@@ -55,7 +55,7 @@ The user never needs to switch to a worker thread.
 - **The lean run record and result hashes** enforce story dependencies and sequential execution
 - **Git worktrees** isolate implementation from the main branch
 
-Implementation resolves `plugins/scope/` before entering `./worktree/{epic-id}` and
+Implementation resolves `plugins/scope/` before entering `./wip/{epic-id}` and
 retains that absolute installation path because ignored plugin files are not
 copied into linked worktrees. A new invocation already inside a worktree must
 have its own install; it must not silently select an unrelated checkout.
@@ -148,7 +148,7 @@ your-project/
 │   ├── architecture/       # Technical docs (Arc42 sections 01-13)
 │   ├── epics/{epic-id}/    # Per-epic contract, design, plans, and evidence
 │   └── releases/           # Release documentation
-├── ./worktree/
+├── ./wip/
 │   └── {epic-id}/          # Git worktree per epic (implementation happens here)
 └── src/                    # Your application code
 ```
@@ -166,7 +166,7 @@ files remain advisory.
 **Bounded audit** — `/audit_epic` runs one full read-only audit. Implementation
 remediates findings, then audit performs one targeted verification.
 
-**Git worktrees** — Implementation happens in `./worktree/{epic-id}` on branch
+**Git worktrees** — Implementation happens in `./wip/{epic-id}` on branch
 `epic/{epic-id}`. After audit PASS, implementation records runner-observed
 evidence and seals the exact delivery. `/wrap_epic` presents one approval bound
 to the staged tree and current main HEAD, then commits and merges only that

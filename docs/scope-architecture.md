@@ -148,7 +148,7 @@ user-project/
 │   ├── epics/{epic-id}/                    # Per-epic documentation
 │   └── releases/{version}/                 # Release documentation
 │
-├── worktree/                               # Worktrees for implementation
+├── wip/                               # Worktrees for implementation
 │   └── {epic-id}/                          # Worktree per epic
 │       ├── .git                            # Worktree link
 │       └── src/                            # Code changes
@@ -158,7 +158,7 @@ user-project/
 
 **Key points:**
 - Documentation is always local markdown files in `docs/`
-- Implementation happens in git worktrees under `worktree/`
+- Implementation happens in git worktrees under `wip/`
 - Main branch holds refinement artifacts; worktrees hold implementation
 - Canonical workflow state and reviewer receipts remain in epic/audit
   artifacts; only runner snapshots, prompts, and logs live under `tmp_debug/`
@@ -318,7 +318,7 @@ Implementation happens in git worktrees, not on the main branch.
 
 ```
 /implement {epic-id}
-  → Creates worktree at worktree/{epic-id} on branch epic/{epic-id}
+  → Creates worktree at wip/{epic-id} on branch epic/{epic-id}
   → All stories implemented in the worktree
   → Audit PASS and delivery summary are sealed without committing
   → /wrap_epic archives and merges the exact seal-bound delta after approval
@@ -599,28 +599,28 @@ cancellation, scoped write snapshots, and three-case recovery. Its small
 evidence remain in canonical epic and audit artifacts.
 
 Worker routing is provider-local. A Codex installation reads
-`plugins/scope/config/worker-policy.yaml`, where every worker phase uses the
-GPT-5.6 family; a Claude installation reads `.claude/config/worker-policy.yaml`,
-where every worker phase uses Claude. Each file defines `workers` (quality) and
+`plugins/scope/config/worker-policy.yaml`; a Claude installation reads
+`.claude/config/worker-policy.yaml`. Each file defines `workers` (quality) and
 `workers_on_budget`; the orchestrator selects the profile at run initialization.
 The worker receives only its bounded job, never the routing profile.
 
-Claude routing uses the evergreen Claude Code aliases `fable`, `opus`, and
-`sonnet`: Fable owns high-leverage product/design judgment, Opus owns critical
-verification, debugging, and remediation, and Sonnet owns bounded execution and
-mechanical synthesis. The budget profile lowers effort on bounded work but keeps
-Fable and Opus at critical gates. Completed jobs record the requested alias and
-raw model IDs reported by Claude Code `modelUsage` without maintaining a
-version-sensitive fallback-family taxonomy. The Claude reviewer uses CLI text
-output directly; because that
+Product refinement and diagnostic investigation use pinned `gpt-5.6-sol` or
+`claude-opus-5` at high effort in both profiles. Other worker phases retain
+`gpt-6-astra` or `claude-fable-5-1` with phase-specific effort. Routing is per
+phase, not per-job complexity. The orchestration-only host session should also
+use Sol high or Opus 5 high, selected in the host rather than by worker policy.
+
+Completed jobs record the requested model and raw model IDs reported by Claude
+Code `modelUsage` without maintaining a version-sensitive fallback-family
+taxonomy. The Claude reviewer uses CLI text output directly; because that
 transport does not report resolved model IDs, its receipt marks actual-model and
 transparent-fallback status as unavailable rather than treating the requested
-alias as proof of execution.
+model as proof of execution.
 
 Independent reviewers use shared `reviewer-policy.yaml`. Reviewer profile
 (`default` or `budget`) and reviewer set (`standard` or `expanded`) are separate
 choices bound into the durable review packet/attempt and receipt. Expanded
-review can add Antigravity/Gemini 3.1 Pro High and OpenCode/GLM 5.2 Max without
+review can add Antigravity/Gemini 3.1 Pro High and OpenCode/Muse Spark 1.3 Contributor (high) without
 changing the primary provider used for workers.
 
 #### CodeGraph-assisted repository investigation

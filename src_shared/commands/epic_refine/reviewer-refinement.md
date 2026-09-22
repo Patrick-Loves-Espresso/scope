@@ -74,7 +74,7 @@ and proof strategy. Do not repeat the complete semantic-core review.
   unresolved decision can materially change the outcome.
 - `major`: significant readiness, consistency, or testability weakness that
   should be corrected before implementation.
-- `minor`: optional clarity or low-risk polish.
+- `minor`: concrete low-risk defect, not optional polish.
 
 Missing evidence is `unverified` until evidence proves a defect.
 
@@ -143,3 +143,5 @@ every packet-assigned fingerprint:
 condition. `still_open` preserves the finding and names the failed or missing
 closure evidence. Edited prose and a passing structural validator are not
 independent closure evidence.
+
+Put optional polish in a separate `## Suggestions` section, outside `## Findings`. Suggestions do not block handoff. Targeted reviews verify only named fingerprints and do not introduce new candidates.
