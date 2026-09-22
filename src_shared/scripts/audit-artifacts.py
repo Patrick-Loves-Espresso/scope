@@ -665,6 +665,35 @@ def _attempt_paths(
     )
 
 
+def _failed_review_recovery(
+    attempt: Mapping[str, Any], attempt_dir: Path, repo_root: Path, policy: Mapping[str, Any]
+) -> bool:
+    if (
+        attempt.get("mode") != "full"
+        or attempt.get("status") != "blocked"
+        or attempt.get("decision", {}).get("reason") != "required independent review is incomplete"
+        or not attempt.get("gates")
+        or any(gate.get("status") not in {"pass", "not_applicable"} for gate in attempt["gates"])
+    ):
+        return False
+    review = attempt.get("review", {})
+    receipt_path = attempt_dir / str(policy.get("paths", {}).get("reviewer_receipt"))
+    if not receipt_path.is_file() or review.get("receipt_sha256") != _file_sha256(receipt_path):
+        return False
+    errors, receipt, _, candidates, verifications, complete = _verify_receipt(
+        attempt_dir.parent.parent, receipt_path, repo_root, policy
+    )
+    return bool(
+        not errors
+        and not complete
+        and receipt.get("status") == "failed"
+        and receipt.get("assignments")
+        and all(row.get("status") != "completed" for row in receipt["assignments"])
+        and not candidates
+        and not verifications
+    )
+
+
 def prepare(args: argparse.Namespace) -> int:
     epic_dir = args.epic_dir.resolve()
     with _mutation_guard(args.run, epic_dir) as (_, working_root, _):
@@ -747,6 +776,7 @@ def prepare(args: argparse.Namespace) -> int:
                 return 0
             raise ValueError(f"a different pending audit attempt already exists: {path.parent.name}")
         terminal_count = 0
+        recovery_count = 0
         for path in sorted((epic_dir / "reviews").glob("audit-*/audit-attempt.yaml")):
             historical = _load_yaml(path, "historical audit attempt")
             if historical.get("mode") == args.mode and historical.get("status") in {
@@ -755,8 +785,13 @@ def prepare(args: argparse.Namespace) -> int:
                 "blocked",
             }:
                 terminal_count += 1
+                if args.mode == "full" and _failed_review_recovery(
+                    historical, path.parent, working_root, policy
+                ):
+                    recovery_count += 1
         limit = int(policy.get("attempt_limits", {}).get(args.mode, 0))
-        if terminal_count >= limit:
+        recovery_limit = int(policy.get("attempt_limits", {}).get("failed_review_recovery", 0))
+        if terminal_count - min(recovery_count, recovery_limit) >= limit:
             raise ValueError(f"{args.mode} audit attempt budget is exhausted")
         attempt_id, attempt_dir = _next_attempt(epic_dir)
         acceptance_ids = manifest.get("acceptance_ids", [])

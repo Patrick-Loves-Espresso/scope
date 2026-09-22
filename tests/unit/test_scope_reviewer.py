@@ -368,6 +368,7 @@ def _args(
     *,
     repair: bool = False,
     run: Path | None = None,
+    reviewer_set: str = "standard",
 ) -> argparse.Namespace:
     return argparse.Namespace(
         repo_root=repo,
@@ -380,7 +381,7 @@ def _args(
         workflow=workflow,
         repair_infrastructure=repair,
         reviewer_profile="default",
-        reviewer_set="standard",
+        reviewer_set=reviewer_set,
     )
 
 
@@ -689,7 +690,7 @@ def test_all_assignments_launch_concurrently(tmp_path: Path) -> None:
             {"provider": "agy", "mission": "semantic_core"},
         ],
     )
-    code, receipt = RUNNER.run_reviewers(_args(repo, policy, packet, template, "audit"))
+    code, receipt = RUNNER.run_reviewers(_args(repo, policy, packet, template, "audit", reviewer_set="expanded"))
     assert code == 0
     assert [row["status"] for row in receipt["assignments"]] == [
         "completed",
@@ -705,7 +706,7 @@ def test_agy_fallback_is_explicit_and_only_before_semantic_output(
     packet, template = _packet(
         repo, "audit", [{"provider": "agy", "mission": "semantic_core"}]
     )
-    code, receipt = RUNNER.run_reviewers(_args(repo, policy, packet, template, "audit"))
+    code, receipt = RUNNER.run_reviewers(_args(repo, policy, packet, template, "audit", reviewer_set="expanded"))
     row = receipt["assignments"][0]
     assert code == 0 and len(row["attempts"]) == 2
     assert row["fallback"] == {
@@ -721,7 +722,7 @@ def test_agy_does_not_fallback_after_partial_semantic_output(tmp_path: Path) -> 
     packet, template = _packet(
         repo, "audit", [{"provider": "agy", "mission": "semantic_core"}]
     )
-    code, receipt = RUNNER.run_reviewers(_args(repo, policy, packet, template, "audit"))
+    code, receipt = RUNNER.run_reviewers(_args(repo, policy, packet, template, "audit", reviewer_set="expanded"))
     row = receipt["assignments"][0]
     assert code == 1 and row["status"] == "provider_failed"
     assert len(row["attempts"]) == 1 and row["fallback"] is None
@@ -769,7 +770,7 @@ def test_infrastructure_repair_preserves_completed_review(tmp_path: Path) -> Non
             {"provider": "agy", "mission": "semantic_core"},
         ],
     )
-    args = _args(repo, policy, packet, template, "audit")
+    args = _args(repo, policy, packet, template, "audit", reviewer_set="expanded")
     first_code, first = RUNNER.run_reviewers(args)
     assert first_code == 1
     assert [row["status"] for row in first["assignments"]] == [
@@ -781,7 +782,7 @@ def test_infrastructure_repair_preserves_completed_review(tmp_path: Path) -> Non
         RUNNER.run_reviewers(args)
     _configure(state, "agy")
     second_code, second = RUNNER.run_reviewers(
-        _args(repo, policy, packet, template, "audit", repair=True)
+        _args(repo, policy, packet, template, "audit", repair=True, reviewer_set="expanded")
     )
     assert second_code == 0
     assert _runtime_count(state, "codex") == 1

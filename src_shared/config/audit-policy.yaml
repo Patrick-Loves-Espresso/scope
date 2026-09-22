@@ -12,6 +12,7 @@ modes:
 attempt_limits:
   full: 1
   targeted: 1
+  failed_review_recovery: 1
 
 attempt_statuses:
   - pending
@@ -35,7 +36,7 @@ review:
       providers:
         - claude
         - codex
-        - agy
+        - opencode
     expanded:
       providers:
         - claude

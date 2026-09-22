@@ -68,6 +68,12 @@ Use `remediation_required` only when implementation can correct the root cause
 inside approved scope. Use `user_decision` or `documentation_decision` when
 authority is required. Never decide accepted risk for the user.
 
+For a full audit, set `DECISION` to `blocked` if any candidate needs
+`user_decision` or `documentation_decision`, or if `Questions for User` is not
+`None`. Otherwise use `findings` when there are candidates, `unverified` when
+required evidence is unreadable, and `pass` only when none of those apply.
+List every candidate even when the decision is `blocked`.
+
 ## Output Contract
 
 Return Markdown using exactly this structure:

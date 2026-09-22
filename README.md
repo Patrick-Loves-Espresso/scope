@@ -40,8 +40,8 @@ models at high effort for the user-facing orchestrator too; select the session
 model in the host, since worker policies do not change it. Design/handoff,
 corrections, implementation, remediation, debugging, and independent reviewers
 retain Astra (`gpt-6-astra`) or Fable (`claude-fable-5-1`) at their existing efforts.
-The standard audit retains Gemini as its third independent reviewer. Muse Spark
-(`meta/muse-spark-1.3-contributor`, variant `high`) is optional and expanded-only.
+The standard audit uses Muse Spark (`meta/muse-spark-1.3-contributor`, variant
+`high`) as its third independent reviewer. Gemini remains expanded-only.
 Evaluate the cheaper routes on a new epic before extending them to other phases;
 equivalent quality and quota savings have not yet been measured in Scope.
 
@@ -255,7 +255,9 @@ Candidate files remain advisory.
 
 **Bounded audit** — `/audit_epic` runs one full, read-only audit. Implementation
 remediates findings, then audit performs one targeted verification. Additional
-full audits require a material boundary change or explicit authorization.
+full audits require a material boundary change or explicit authorization. One
+failed-review recovery is allowed when every gate passed but no independent
+review completed; the failed attempt and its raw outputs remain preserved.
 
 **Conversational orchestration** — The public command is the only process that
 talks to you. It derives progress from durable artifacts and validators, starts

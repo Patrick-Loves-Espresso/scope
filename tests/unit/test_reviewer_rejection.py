@@ -173,7 +173,7 @@ def test_quota_fallback_launch_failure_is_recorded_without_semantic_success(tmp_
         if model == 'gemini-3.8-flash-high': raise OSError('fallback binary unavailable')
         return launch(command, config, paths, root, model)
     monkeypatch.setattr(RUNNER, 'launch_process', fail_fallback)
-    code, receipt = RUNNER.run_reviewers(fixtures._args(repo, policy, packet, template, 'audit'))
+    code, receipt = RUNNER.run_reviewers(fixtures._args(repo, policy, packet, template, 'audit', reviewer_set='expanded'))
     assert code == 1
     row = receipt['assignments'][0]
     assert row['status'] == 'launch_failed'

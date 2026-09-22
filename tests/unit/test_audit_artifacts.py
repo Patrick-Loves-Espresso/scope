@@ -735,6 +735,36 @@ def test_clean_full_audit_passes_and_second_full_attempt_is_blocked(tmp_path: Pa
     assert AUDIT.main(["prepare", str(epic), "--run", str(run), "--mode", "full"]) == 1
 
 
+def test_failed_review_recovery_allows_one_replacement_full_audit(tmp_path: Path) -> None:
+    repo, epic, run = _fixture(tmp_path)
+    for _ in range(2):
+        attempt = _prepare(epic, run)
+        assert _record_pass(epic, attempt, run, epic / "proof.txt") == 0
+        packet = yaml.safe_load((attempt / "review-packet.yaml").read_text(encoding="utf-8"))
+        _receipt(
+            repo, attempt, top_status="failed",
+            row_statuses=["invalid_output"] * len(packet["assignments"]),
+        )
+        assert AUDIT.main(["apply-synthesis", str(epic), str(attempt), "--run", str(run)]) == 0
+        assert AUDIT.main(["finalize", str(epic), str(attempt), "--run", str(run)]) == 0
+        assert yaml.safe_load((attempt / "audit-attempt.yaml").read_text())["status"] == "blocked"
+    assert AUDIT.main(["prepare", str(epic), "--run", str(run), "--mode", "full"]) == 1
+
+
+def test_completed_reviewer_still_consumes_full_audit_budget(tmp_path: Path) -> None:
+    repo, epic, run = _fixture(tmp_path)
+    attempt = _prepare(epic, run)
+    assert _record_pass(epic, attempt, run, epic / "proof.txt") == 0
+    packet = yaml.safe_load((attempt / "review-packet.yaml").read_text(encoding="utf-8"))
+    _receipt(
+        repo, attempt, top_status="failed",
+        row_statuses=["completed", *["invalid_output"] * (len(packet["assignments"]) - 1)],
+    )
+    assert AUDIT.main(["apply-synthesis", str(epic), str(attempt), "--run", str(run)]) == 0
+    assert AUDIT.main(["finalize", str(epic), str(attempt), "--run", str(run)]) == 0
+    assert AUDIT.main(["prepare", str(epic), "--run", str(run), "--mode", "full"]) == 1
+
+
 def test_post_synthesis_findings_tamper_blocks_finalization(tmp_path: Path) -> None:
     repo, epic, run = _fixture(tmp_path)
     attempt = _prepare(epic, run)

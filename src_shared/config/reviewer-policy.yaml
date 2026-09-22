@@ -107,7 +107,7 @@ reviewer_sets:
     standard:
       - claude
       - codex
-      - agy
+      - opencode
     expanded:
       - claude
       - codex
