@@ -787,6 +787,26 @@ def test_filtered_workspace_hash_rejects_ignored_drift_between_jobs_and_at_audit
     assert any("last runner-validated" in error for error in errors)
 
 
+def test_filtered_workspace_hash_ignores_empty_generated_directories(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    evidence_relative = "docs/epics/gd-001/implementation-evidence.yaml"
+    before = RUNNER.capture_snapshot(repo)
+
+    (repo / "plugins").mkdir()
+    after_directory = RUNNER.capture_snapshot(repo)
+    assert RUNNER._workspace_snapshot_sha256(
+        before, evidence_relative
+    ) == RUNNER._workspace_snapshot_sha256(after_directory, evidence_relative)
+
+    (repo / "plugins/runtime.txt").write_text("unexpected\n", encoding="utf-8")
+    after_file = RUNNER.capture_snapshot(repo)
+    assert RUNNER._workspace_snapshot_sha256(
+        before, evidence_relative
+    ) != RUNNER._workspace_snapshot_sha256(after_file, evidence_relative)
+
+
 def test_evidence_promotion_records_deleted_state(tmp_path: Path) -> None:
     repo = _repo(tmp_path / "repo")
     scope = _scope(tmp_path / "scope")

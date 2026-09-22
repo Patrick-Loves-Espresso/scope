@@ -160,6 +160,14 @@ def _relative(root: Path, path: Path) -> str:
         raise ReviewerError(f"path is outside repository root: {path}") from exc
 
 
+def _is_inside(root: Path, path: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def _resolve_from(base: Path, value: str, root: Path, context: str) -> Path:
     path = Path(value)
     if not path.is_absolute():
@@ -420,11 +428,45 @@ def resolve_template(
     if override is not None:
         return _resolve_from(repo_root, str(override), repo_root, "reviewer template")
     configured = _string(workflow_config.get("template"), "workflow template")
+    installation_root = Path(__file__).resolve().parents[1]
     return _inside(
-        repo_root,
+        installation_root,
         Path(__file__).resolve().parent / configured,
         "configured reviewer template",
     )
+
+
+def materialize_template(
+    policy: Mapping[str, Any],
+    packet_path: Path,
+    repo_root: Path,
+    template_path: Path,
+) -> Path:
+    if _is_inside(repo_root, template_path):
+        return template_path
+    paths = _mapping(policy.get("paths"), "reviewer policy paths")
+    configured = _string(paths.get("template_snapshot"), "paths.template_snapshot")
+    snapshot = _resolve_from(
+        packet_path.parent,
+        configured,
+        repo_root,
+        "reviewer template snapshot",
+    )
+    content = template_path.read_bytes()
+    if snapshot.exists():
+        if not snapshot.is_file() or snapshot.read_bytes() != content:
+            raise ReviewerError(
+                "reviewer template snapshot differs from the installed template"
+            )
+        return snapshot
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    temporary = snapshot.with_name(f".{snapshot.name}.{os.getpid()}.tmp")
+    try:
+        temporary.write_bytes(content)
+        os.replace(temporary, snapshot)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return snapshot
 
 
 def resolve_runtime_dir(
@@ -2079,8 +2121,55 @@ def _codegraph_state_for_run(
     run_argument = getattr(args, "run", None)
     if run_argument is None:
         return scope_codegraph.prepare(codegraph_policy, repo_root)
-    run_path = _resolve_from(repo_root, str(run_argument), repo_root, "Scope run")
+    run_path = Path(str(run_argument))
+    if not run_path.is_absolute():
+        run_path = repo_root / run_path
+    run_path = run_path.resolve(strict=True)
     run = load_yaml(run_path, "Scope run")
+    if not _is_inside(repo_root, run_path):
+        working_root = Path(str(run.get("working_root", ""))).resolve()
+        repository_root = Path(str(run.get("repository_root", ""))).resolve()
+        try:
+            common = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(repo_root),
+                    "rev-parse",
+                    "--path-format=absolute",
+                    "--git-common-dir",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise ReviewerError("cannot resolve the worktree Git common directory") from exc
+        common_root = Path(common.stdout.strip()).resolve().parent
+        epic_id = str(run.get("epic_id", ""))
+        command = str(run.get("command", ""))
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", epic_id) or command not in {
+            "epic_refine",
+            "implement",
+            "audit_epic",
+        }:
+            raise ReviewerError("Scope run has an invalid identity")
+        expected = (
+            common_root
+            / "tmp_debug"
+            / "scope-runs"
+            / epic_id
+            / command
+            / "run.yaml"
+        ).resolve()
+        if (
+            working_root != repo_root
+            or repository_root != common_root
+            or run_path != expected
+        ):
+            raise ReviewerError(
+                "Scope run is not bound to this worktree and its common repository"
+            )
     state = _mapping(run.get("codegraph"), "Scope run codegraph")
     if state.get("project_root", str(repo_root)) != str(repo_root):
         raise ReviewerError("Scope run CodeGraph state belongs to another working root")
@@ -2135,6 +2224,16 @@ def run_reviewers(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         paths_by_assignment,
         base_context,
     ) = _prepare(args)
+    template_path = materialize_template(
+        policy, packet_path, repo_root, template_path
+    )
+    owned_paths = {
+        path
+        for paths in paths_by_assignment.values()
+        for path in paths.__dict__.values()
+    }
+    if template_path == receipt_path or template_path in owned_paths:
+        raise ReviewerError("reviewer template snapshot overlaps a reviewer output")
     codegraph_policy = load_codegraph_policy(
         Path(args.policy).resolve().parent / "codegraph-policy.yaml"
     )

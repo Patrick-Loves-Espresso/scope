@@ -107,6 +107,21 @@ def test_reuse_invalidates_for_context_changes(project: tuple[Path, Path], monke
     assert "new secret" not in (root / result["path"]).read_text()
 
 
+def test_runtime_environment_does_not_make_proof_identity_provider_specific(
+    project: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, epic = project
+    proof = command()
+    config = proofs.policy()
+    first_identity, first_env = proofs.context(proof, root, epic, config)
+
+    monkeypatch.setenv("TMPDIR", "/tmp/another-provider-session")
+    second_identity, second_env = proofs.context(proof, root, epic, config)
+
+    assert first_env["TMPDIR"] != second_env["TMPDIR"]
+    assert first_identity == second_identity
+
+
 @pytest.mark.parametrize("code", ["print('1 failed in 0.1s')", "print('1 skipped in 0.1s')", "print('1 passed in 0.1s'); raise SystemExit(2)", "print('summary missing')"])
 def test_exit_and_counts_both_must_pass(project: tuple[Path, Path], code: str) -> None:
     root, epic = project

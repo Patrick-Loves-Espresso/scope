@@ -21,6 +21,7 @@ repairable_statuses:
 
 paths:
   receipt: reviewer-receipt.yaml
+  template_snapshot: reviewer-template.md
   runtime_directory: tmp_debug/scope-reviewers/{epic_id}/{review_id}
 
 workflows:

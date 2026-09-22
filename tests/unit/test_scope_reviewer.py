@@ -363,7 +363,7 @@ def _args(
     repo: Path,
     policy: Path,
     packet: Path,
-    template: Path,
+    template: Path | None,
     workflow: str,
     *,
     repair: bool = False,
@@ -382,6 +382,108 @@ def _args(
         reviewer_profile="default",
         reviewer_set="standard",
     )
+
+
+def test_default_installed_template_is_snapshotted_into_review_directory(
+    tmp_path: Path,
+) -> None:
+    repo, state, policy = _environment(tmp_path)
+    _configure(state, "codex")
+    packet, _ = _packet(
+        repo, "audit", [{"provider": "codex", "mission": "semantic_core"}]
+    )
+
+    code, receipt = RUNNER.run_reviewers(
+        _args(repo, policy, packet, None, "audit")
+    )
+
+    snapshot = packet.parent / "reviewer-template.md"
+    assert code == 0
+    assert snapshot.is_file()
+    assert receipt["template_path"] == snapshot.relative_to(repo).as_posix()
+    assert receipt["template_sha256"] == RUNNER.file_sha256(snapshot)
+
+
+def test_default_installed_template_refuses_stale_review_snapshot(
+    tmp_path: Path,
+) -> None:
+    repo, state, policy = _environment(tmp_path)
+    _configure(state, "codex")
+    packet, _ = _packet(
+        repo, "audit", [{"provider": "codex", "mission": "semantic_core"}]
+    )
+    (packet.parent / "reviewer-template.md").write_text(
+        "stale template\n", encoding="utf-8"
+    )
+
+    with pytest.raises(RUNNER.ReviewerError, match="snapshot differs"):
+        RUNNER.run_reviewers(_args(repo, policy, packet, None, "audit"))
+
+
+def test_worktree_accepts_scope_run_from_matching_common_repository(
+    tmp_path: Path,
+) -> None:
+    main, state, _ = _environment(tmp_path)
+    subprocess.run(
+        ["git", "-C", str(main), "config", "user.email", "scope@example.test"],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(main), "config", "user.name", "Scope Test"],
+        check=True,
+    )
+    subprocess.run(["git", "-C", str(main), "add", "."], check=True)
+    subprocess.run(
+        ["git", "-C", str(main), "commit", "-q", "-m", "baseline"],
+        check=True,
+    )
+    worktree = tmp_path / "worktree"
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(main),
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "epic-test",
+            str(worktree),
+        ],
+        check=True,
+    )
+    policy = worktree / "reviewer-policy.yaml"
+    _configure(state, "codex")
+    packet, template = _packet(
+        worktree,
+        "audit",
+        [{"provider": "codex", "mission": "semantic_core"}],
+        review_id="audit-001",
+    )
+    run = _dump(
+        main / "tmp_debug/scope-runs/E-001/audit_epic/run.yaml",
+        {
+            "schema_version": 2,
+            "epic_id": "E-001",
+            "command": "audit_epic",
+            "repository_root": str(main.resolve()),
+            "working_root": str(worktree.resolve()),
+            "codegraph": {
+                "status": "degraded",
+                "reason": "prepared_degraded",
+                "project_root": str(worktree.resolve()),
+            },
+        },
+    )
+
+    code, receipt = RUNNER.run_reviewers(
+        _args(worktree, policy, packet, template, "audit", run=run)
+    )
+
+    assert code == 0
+    assert receipt["status"] == "completed"
+    prompt = worktree / receipt["assignments"][0]["paths"]["prompt"]
+    assert "prepared_degraded" in prompt.read_text(encoding="utf-8")
 
 
 def _runtime_count(state: Path, provider: str) -> int:

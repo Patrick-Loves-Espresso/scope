@@ -1678,6 +1678,7 @@ def _workspace_snapshot_sha256(
         for row in snapshot.get("entries", [])
         if isinstance(row, Mapping)
         and isinstance(row.get("path"), str)
+        and row.get("kind") != "directory"
         and included(str(row["path"]))
     ]
     entries.sort(key=lambda row: str(row["path"]))

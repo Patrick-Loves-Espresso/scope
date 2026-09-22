@@ -128,8 +128,8 @@ def counts(output: str, parser: str, exit_code: int) -> dict[str, int]:
 
 def context(proof: Mapping[str, Any], root: Path, epic_dir: Path, config: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
     value = execution(proof, root, config)
-    names = sorted(set(config["environment"]) | set(value["environment"]))
-    env = {name: os.environ[name] for name in names if name in os.environ}
+    runtime_names = sorted(set(config["environment"]) | set(value["environment"]))
+    env = {name: os.environ[name] for name in runtime_names if name in os.environ}
     execution_root = root / value["cwd"]
     search_path = os.pathsep.join(str((execution_root / entry).resolve()) if not Path(entry).is_absolute() else entry
                                   for entry in env.get("PATH", "").split(os.pathsep))
@@ -139,7 +139,12 @@ def context(proof: Mapping[str, Any], root: Path, epic_dir: Path, config: Mappin
     identity = {
         "executable_sha256": fingerprint.file_sha256(executable_path) if executable_path and executable_path.is_file() else None,
         "argv": value["argv"], "cwd": value["cwd"], "parser": value["parser"],
-        "environment_sha256": fingerprint.structured_sha256({name: env.get(name) for name in names}),
+        # Scope's portable runtime variables let the same proof run under Claude,
+        # Codex, and CI. Only manifest-approved inputs belong to proof identity;
+        # the resolved executable is bound separately above.
+        "environment_sha256": fingerprint.structured_sha256(
+            {name: env.get(name) for name in sorted(value["environment"])}
+        ),
         "source_sha256": fingerprint.audit_fingerprint(epic_dir, root)["workspace_sha256"],
     }
     return identity, env
