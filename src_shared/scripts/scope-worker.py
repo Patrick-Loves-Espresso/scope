@@ -891,6 +891,21 @@ def snapshot_delta(before: Mapping[str, Any], after: Mapping[str, Any]) -> list[
     )
 
 
+def _directory_delta_paths(
+    before: Mapping[str, Any], after: Mapping[str, Any]
+) -> set[str]:
+    """Return changed directory entries, which Git cannot deliver independently."""
+    before_rows = {row["path"]: row for row in before.get("entries", [])}
+    after_rows = {row["path"]: row for row in after.get("entries", [])}
+    return {
+        path
+        for path in before_rows.keys() | after_rows.keys()
+        if before_rows.get(path) != after_rows.get(path)
+        and before_rows.get(path, {}).get("kind") in {None, "directory"}
+        and after_rows.get(path, {}).get("kind") in {None, "directory"}
+    }
+
+
 def _escaping_symlinks(snapshot: Mapping[str, Any], working_root: Path, scopes: Sequence[str]) -> list[str]:
     escaped = []
     for row in snapshot.get("entries", []):
@@ -2225,11 +2240,17 @@ def _validate_attribution(
                 "implementation worker changed ignored paths that cannot be delivered: "
                 f"{unsafe_ignored}"
             )
-        safe_ignored = {path for path in ignored if _is_safe_ignored_test_artifact(path)}
+        safe_ignored = {path for path in actual if _is_safe_ignored_test_artifact(path)}
         actual = [path for path in actual if path not in safe_ignored]
     else:
         safe_ignored = set()
-    declared = sorted(path for path in result["changed_paths"] if path not in safe_ignored)
+    directory_paths = _directory_delta_paths(before, after)
+    actual = [path for path in actual if path not in directory_paths]
+    declared = sorted(
+        path
+        for path in result["changed_paths"]
+        if path not in safe_ignored and path not in directory_paths
+    )
     if declared != actual:
         raise ContractError(f"declared changed paths do not match actual paths; declared={declared}, actual={actual}")
     outside = [path for path in actual if not _path_in_scope(path, job["write_scope"])]

@@ -554,7 +554,7 @@ def test_implementation_worker_ignores_only_known_gitignored_test_artifacts(
     scope = _scope(tmp_path / "scope")
     job, _ = _job(repo, scope, write_scope=["."])
     with (repo / ".gitignore").open("a", encoding="utf-8") as stream:
-        stream.write("\n__pycache__/\n.pytest_cache/\n.coverage*\n.env\n")
+        stream.write("\n__pycache__/\n.coverage*\n.env\n")
     _command("git", "add", ".gitignore", cwd=repo)
     _command("git", "commit", "-m", "ignore test artifacts", cwd=repo)
     before = RUNNER.capture_snapshot(repo)
@@ -562,8 +562,15 @@ def test_implementation_worker_ignores_only_known_gitignored_test_artifacts(
     (repo / "src/__pycache__").mkdir()
     (repo / "src/__pycache__/value.pyc").write_bytes(b"cache")
     (repo / ".pytest_cache").mkdir()
+    (repo / ".pytest_cache/.gitignore").write_text("*\n", encoding="utf-8")
     (repo / ".pytest_cache/state").write_text("cache", encoding="utf-8")
     (repo / ".coverage").write_text("coverage", encoding="utf-8")
+    assert subprocess.run(
+        ["git", "check-ignore", ".pytest_cache"], cwd=repo, check=False
+    ).returncode == 1
+    assert subprocess.run(
+        ["git", "check-ignore", ".pytest_cache/state"], cwd=repo, check=False
+    ).returncode == 0
     after = RUNNER.capture_snapshot(repo)
     result = _result(
         job,
@@ -584,6 +591,33 @@ def test_implementation_worker_ignores_only_known_gitignored_test_artifacts(
     unsafe = RUNNER.capture_snapshot(repo)
     with pytest.raises(RUNNER.ContractError, match=r"\.env"):
         RUNNER._validate_attribution(job, result, before, unsafe)
+
+
+def test_implementation_attribution_reports_deliverable_files_not_parent_directories(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    scope = _scope(tmp_path / "scope")
+    job, _ = _job(repo, scope, write_scope=["."])
+    before = RUNNER.capture_snapshot(repo)
+    source = repo / "src/disambiguation/evaluation/value.py"
+    test = repo / "tests/unit/disambiguation/test_value.py"
+    source.parent.mkdir(parents=True)
+    test.parent.mkdir(parents=True)
+    source.write_text("VALUE = 2\n", encoding="utf-8")
+    test.write_text("from src.disambiguation.evaluation.value import VALUE\n", encoding="utf-8")
+    after = RUNNER.capture_snapshot(repo)
+    result = _result(
+        job,
+        [
+            "src/disambiguation/evaluation/value.py",
+            "tests/unit/disambiguation/test_value.py",
+        ],
+    )
+    assert RUNNER._validate_attribution(job, result, before, after) == [
+        "src/disambiguation/evaluation/value.py",
+        "tests/unit/disambiguation/test_value.py",
+    ]
 
 
 def test_optional_allowed_validation_result_is_informational_but_failure_blocks(
