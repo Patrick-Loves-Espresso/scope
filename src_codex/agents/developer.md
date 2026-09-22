@@ -1,7 +1,7 @@
 ---
 name: developer
 description: Implement production-ready code. Writes both implementation and tests. Retries up to 4x, then escalates.
-model: gpt-6-astra
+model: gpt-6-sol
 model_reasoning_effort: max
 tools: Read, Write, Edit, Bash, Glob, Grep
 phases:

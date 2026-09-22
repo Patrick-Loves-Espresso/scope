@@ -4,32 +4,32 @@ provider: claude
 workers:
   refinement:
     phases:
-      product: {model: claude-opus-5, reasoning_effort: high}
-      design_handoff: {model: claude-fable-5-1, reasoning_effort: max}
-      correction: {model: claude-fable-5-1, reasoning_effort: high}
+      product: {model: claude-opus-5-5, reasoning_effort: high}
+      design_handoff: {model: claude-opus-5-5, reasoning_effort: max}
+      correction: {model: claude-opus-5-5, reasoning_effort: high}
   implementation:
     phases:
-      story: {model: claude-fable-5-1, reasoning_effort: max}
-      audit_remediation: {model: claude-fable-5-1, reasoning_effort: max}
-      debugging: {model: claude-fable-5-1, reasoning_effort: xhigh}
+      story: {model: claude-opus-5-5, reasoning_effort: max}
+      audit_remediation: {model: claude-opus-5-5, reasoning_effort: max}
+      debugging: {model: claude-opus-5-5, reasoning_effort: xhigh}
   diagnostic:
     phases:
-      investigate: {model: claude-opus-5, reasoning_effort: high}
+      investigate: {model: claude-opus-5-5, reasoning_effort: high}
 
 workers_on_budget:
   refinement:
     phases:
-      product: {model: claude-opus-5, reasoning_effort: high}
-      design_handoff: {model: claude-fable-5-1, reasoning_effort: high}
-      correction: {model: claude-fable-5-1, reasoning_effort: high}
+      product: {model: claude-opus-5-5, reasoning_effort: high}
+      design_handoff: {model: claude-opus-5-5, reasoning_effort: high}
+      correction: {model: claude-opus-5-5, reasoning_effort: high}
   implementation:
     phases:
-      story: {model: claude-fable-5-1, reasoning_effort: high}
-      audit_remediation: {model: claude-fable-5-1, reasoning_effort: high}
-      debugging: {model: claude-fable-5-1, reasoning_effort: high}
+      story: {model: claude-opus-5-5, reasoning_effort: high}
+      audit_remediation: {model: claude-opus-5-5, reasoning_effort: high}
+      debugging: {model: claude-opus-5-5, reasoning_effort: high}
   diagnostic:
     phases:
-      investigate: {model: claude-opus-5, reasoning_effort: high}
+      investigate: {model: claude-opus-5-5, reasoning_effort: high}
 
 provider_settings:
   executable: claude

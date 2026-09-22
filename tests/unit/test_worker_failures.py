@@ -40,7 +40,7 @@ def test_provider_preflight_requires_usable_cli(tmp_path, monkeypatch, provider,
 def test_claude_command_limits_tools_and_retains_isolation(tmp_path, access, scope, graph):
     job = {'write_scope': scope, 'required_validations': [{'command': 'pytest -q'}],
            'allowed_commands': ['pytest -q', 'python check.py'], 'implementation_evidence_path': 'evidence.yaml'}
-    command = RUNNER.build_claude_command('claude', {'model': 'claude-fable-5-1', 'reasoning_effort': 'high',
+    command = RUNNER.build_claude_command('claude', {'model': 'claude-opus-5-5', 'reasoning_effort': 'high',
         'permission_mode': 'acceptEdits'}, job, {'type': 'object'}, access, fixtures._ready(tmp_path) if graph else {})
     tools = command[command.index('--tools') + 1].split(',')
     allowed = command[command.index('--allowedTools') + 1].split(',')
@@ -392,7 +392,7 @@ def test_worker_init_and_preflight_cli_bind_scope_and_phase(tmp_path, monkeypatc
     monkeypatch.setattr(RUNNER, 'provider_preflight', lambda provider, selected: {'model': selected['model']})
     args = ['preflight', '--provider', 'codex', '--role', 'implementation', '--scope-root', str(scope), '--phase']
     assert RUNNER.main([*args, 'story']) == 0
-    assert json.loads(capsys.readouterr().out)['model'] == 'gpt-6-astra'
+    assert json.loads(capsys.readouterr().out)['model'] == 'gpt-6-sol'
     assert RUNNER.main([*args, 'design_handoff']) == 1
     assert 'incompatible' in capsys.readouterr().err
 

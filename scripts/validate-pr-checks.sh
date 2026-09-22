@@ -302,8 +302,8 @@ check_install() {
   grep -n "docs/architecture/backend/01-intro.md" "$tmpdir/plugins/scope/skills/project-documentation/SKILL.md"
   grep -n "do not ask for a" "$tmpdir/.claude/skills/project-documentation/SKILL.md"
   grep -n "Do not ask for a Jira project key" "$tmpdir/.claude/skills/project-tracking/SKILL.md"
-  grep -n '^model: claude-fable-5-1$' "$tmpdir/.claude/agents/developer.md"
-  grep -n '^model: gpt-6-astra$' "$tmpdir/plugins/scope/agents/developer.md"
+  grep -n '^model: claude-opus-5-5$' "$tmpdir/.claude/agents/developer.md"
+  grep -n '^model: gpt-6-sol$' "$tmpdir/plugins/scope/agents/developer.md"
   grep -n '^model_reasoning_effort: max$' "$tmpdir/plugins/scope/agents/developer.md"
 
   for obsolete in \
@@ -460,11 +460,12 @@ check_codex_invocation() {
   grep -n -- "--sandbox" src_shared/scripts/scope-worker.py
   grep -n 'model_reasoning_effort' src_shared/scripts/scope-worker.py
   grep -n 'model: gpt-6-astra' src_codex/config/worker-policy.yaml
-  grep -n 'product: {model: gpt-5.6-sol, reasoning_effort: high}' src_codex/config/worker-policy.yaml
-  grep -n 'investigate: {model: gpt-5.6-sol, reasoning_effort: high}' src_codex/config/worker-policy.yaml
+  grep -n 'product: {model: gpt-6-sol, reasoning_effort: high}' src_codex/config/worker-policy.yaml
+  grep -n 'story: {model: gpt-6-sol, reasoning_effort: max}' src_codex/config/worker-policy.yaml
+  grep -n 'investigate: {model: gpt-6-sol, reasoning_effort: high}' src_codex/config/worker-policy.yaml
   grep -n -- "--ignore-user-config" src_shared/config/reviewer-policy.yaml
   grep -n -- "- read-only" src_shared/config/reviewer-policy.yaml
-  grep -n '^model: gpt-6-astra$' src_codex/agents/developer.md
+  grep -n '^model: gpt-6-sol$' src_codex/agents/developer.md
   grep -n '^model_reasoning_effort: max$' src_codex/agents/developer.md
   grep -n 'minimum_version: 1.5.0' src_shared/config/codegraph-policy.yaml
   grep -n 'sync_on_prepare: true' src_shared/config/codegraph-policy.yaml
@@ -499,15 +500,15 @@ check_claude_invocation() {
   if grep -n 'reported_fallback_model_families:' src_claude/config/worker-policy.yaml; then
     fail "worker policy must record raw model usage without fallback-family taxonomy"
   fi
-  grep -n 'product: {model: claude-opus-5, reasoning_effort: high}' src_claude/config/worker-policy.yaml
-  grep -n 'investigate: {model: claude-opus-5, reasoning_effort: high}' src_claude/config/worker-policy.yaml
-  grep -n 'design_handoff: {model: claude-fable-5-1' src_claude/config/worker-policy.yaml
+  grep -n 'product: {model: claude-opus-5-5, reasoning_effort: high}' src_claude/config/worker-policy.yaml
+  grep -n 'investigate: {model: claude-opus-5-5, reasoning_effort: high}' src_claude/config/worker-policy.yaml
+  grep -n 'design_handoff: {model: claude-opus-5-5' src_claude/config/worker-policy.yaml
   grep -n -- "--strict-mcp-config" src_shared/scripts/scope-worker.py
   grep -n -- "--no-session-persistence" src_shared/scripts/scope-worker.py
   grep -n -- "--permission-mode" src_shared/scripts/scope-worker.py
   grep -n -- "--allowedTools" src_shared/scripts/scope-worker.py
   grep -n -- "--disallowedTools" src_shared/scripts/scope-worker.py
-  grep -n 'claude: {model: claude-fable-5-1' src_shared/config/reviewer-policy.yaml
+  grep -n 'claude: {model: claude-opus-5-5' src_shared/config/reviewer-policy.yaml
   grep -n 'opencode: {model: meta/muse-spark-1.3-contributor, reasoning_effort: high}' src_shared/config/reviewer-policy.yaml
   grep -n -- "--safe-mode" src_shared/config/reviewer-policy.yaml
   grep -n -- "--strict-mcp-config" src_shared/config/reviewer-policy.yaml

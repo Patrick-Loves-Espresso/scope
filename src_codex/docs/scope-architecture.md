@@ -604,11 +604,12 @@ Worker routing is provider-local. A Codex installation reads
 `workers_on_budget`; the orchestrator selects the profile at run initialization.
 The worker receives only its bounded job, never the routing profile.
 
-Product refinement and diagnostic investigation use pinned `gpt-5.6-sol` or
-`claude-opus-5` at high effort in both profiles. Other worker phases retain
-`gpt-6-astra` or `claude-fable-5-1` with phase-specific effort. Routing is per
+Product refinement and diagnostic investigation use pinned `gpt-6-sol` or
+`claude-opus-5-5` at high effort in both profiles. Codex corrections and story
+groups use Sol; design/handoff, audit remediation, and debugging retain Astra.
+Claude worker phases use Opus 5.5 at their phase-specific effort. Routing is per
 phase, not per-job complexity. The orchestration-only host session should also
-use Sol high or Opus 5 high, selected in the host rather than by worker policy.
+use Sol high or Opus 5.5 high, selected in the host rather than by worker policy.
 
 Completed jobs record the requested model and raw model IDs reported by Claude
 Code `modelUsage` without maintaining a version-sensitive fallback-family

@@ -34,16 +34,17 @@ Minors must be addressed after the first two refinement reviews; remaining
 minors become visibly deferred after the third completed review. Audit retains
 one full and one targeted review, with minors mandatory in both.
 
-Product refinement and diagnostic workers use Sol (`gpt-5.6-sol`) or Opus 5
-(`claude-opus-5`) at high effort in both quality and budget profiles. Use those
+Product refinement and diagnostic workers use Sol (`gpt-6-sol`) or Opus 5.5
+(`claude-opus-5-5`) at high effort in both quality and budget profiles. Use those
 models at high effort for the user-facing orchestrator too; select the session
-model in the host, since worker policies do not change it. Design/handoff,
-corrections, implementation, remediation, debugging, and independent reviewers
-retain Astra (`gpt-6-astra`) or Fable (`claude-fable-5-1`) at their existing efforts.
+model in the host, since worker policies do not change it. Codex corrections,
+story groups, and the standalone developer use Sol; design/handoff, audit
+remediation, debugging, and independent reviews retain Astra (`gpt-6-astra`).
+Claude workers and reviewers use Opus 5.5 at their existing phase efforts.
 The standard audit uses Muse Spark (`meta/muse-spark-1.3-contributor`, variant
 `high`) as its third independent reviewer. Gemini remains expanded-only.
-Evaluate the cheaper routes on a new epic before extending them to other phases;
-equivalent quality and quota savings have not yet been measured in Scope.
+Evaluate the new routing on a new epic; equivalent quality and quota savings
+have not yet been measured in Scope.
 
 Keep approved or running older epics on their approving Scope version. Do not
 rewrite their hash-bound manifests or evidence. See

@@ -85,22 +85,21 @@ checkpoint and require attribution before continuing.
 
 ## Routing and evaluation
 
-Product refinement and diagnostic workers use `gpt-5.6-sol` or `claude-opus-5`
+Product refinement and diagnostic workers use `gpt-6-sol` or `claude-opus-5-5`
 at high effort in both profiles. Prefer the same model/effort for the
 orchestration-only host session. That selection belongs to the host; the worker
 policy cannot switch the current conversation's model.
 
-Design/handoff, corrections, story groups, remediation, and debugging retain
-`gpt-6-astra` or `claude-fable-5-1` at their existing phase-specific efforts.
-Independent refinement review remains Astra max/Fable max; audit remains Astra
-max/Fable xhigh plus Gemini high. Budget review remains high. Muse Spark
+Codex corrections and story groups use `gpt-6-sol`; design/handoff, audit
+remediation, debugging, and quality-profile independent reviews retain
+`gpt-6-astra`. All Claude workers and reviewers use `claude-opus-5-5` at their
+existing phase-specific efforts. Budget review remains high. Muse Spark
 (`meta/muse-spark-1.3-contributor`) uses OpenCode `--variant high` in both profiles
-and remains expanded-only.
+and is the third standard audit reviewer; Gemini remains expanded-only.
 
-This is an initial routing rollout, not a claim of equivalent model quality or
-effort. Keep the same proof, review, and approval gates. Assess rework, missed
-requirements, and total usage on a new epic before extending cheaper routing to
-implementation or corrections. Current worker routing is per phase, not per-job
+This routing change is not a claim of equivalent model quality or effort. Keep
+the same proof, review, and approval gates. Assess rework, missed requirements,
+and total usage on a new epic. Current worker routing is per phase, not per-job
 complexity; do not silently switch difficult jobs or change a bound run's policy.
 
 Each worker starts a fresh process. Group size is configurable in

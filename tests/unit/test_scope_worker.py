@@ -1224,7 +1224,7 @@ def test_transport_contract_fails_loud_instead_of_repairing(tmp_path: Path) -> N
 def test_claude_parser_records_raw_model_usage_and_explicit_fallback(tmp_path: Path) -> None:
     stdout = tmp_path / "claude.json"
     result = {"schema_version": 2}
-    usage = {"claude-opus-5": {"inputTokens": 12}}
+    usage = {"claude-opus-5-5": {"inputTokens": 12}}
     stdout.write_text(json.dumps({"structured_output": result, "modelUsage": usage, "fallback_used": True}))
     parsed, parsed_usage, fallback = RUNNER._provider_result("claude", tmp_path / "unused", stdout)
     assert parsed == result
@@ -1240,7 +1240,7 @@ def test_codex_command_uses_openai_compatible_result_schema(tmp_path: Path) -> N
     RUNNER.atomic_write_json(schema_path, RUNNER.codex_output_schema(canonical))
     command = RUNNER.build_codex_command(
         "codex",
-        {"model": "gpt-5.6-sol", "reasoning_effort": "high"},
+        {"model": "gpt-6-sol", "reasoning_effort": "high"},
         tmp_path,
         "read-only",
         schema_path,
@@ -1300,7 +1300,7 @@ def test_claude_command_adapts_schema_without_mutating_canonical_contract() -> N
     )
     before = json.dumps(canonical, sort_keys=True)
     command = RUNNER.build_claude_command(
-        "claude", {"model": "claude-opus-5", "reasoning_effort": "high", "permission_mode": "dontAsk"},
+        "claude", {"model": "claude-opus-5-5", "reasoning_effort": "high", "permission_mode": "dontAsk"},
         {"required_validations": []}, canonical, "read-only", {},
     )
     projected = json.loads(command[command.index("--json-schema") + 1])

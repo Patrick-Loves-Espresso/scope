@@ -674,7 +674,7 @@ def test_claude_cli_is_direct_and_uses_stdin(tmp_path: Path) -> None:
     ]
     prompt = repo / row["paths"]["prompt"]
     assert f"`{executable} explore " in prompt.read_text()
-    assert row["requested_model"] == "claude-fable-5-1"
+    assert row["requested_model"] == "claude-opus-5-5"
     assert "model_execution" not in row
 
 

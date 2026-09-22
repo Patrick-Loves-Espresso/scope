@@ -6,8 +6,8 @@ args: "{epic-id}"
 
 # /implement
 
-For this orchestration-only session, prefer `gpt-5.6-sol` at high effort in
-Codex or `claude-opus-5` at high effort in Claude. The host session selects its
+For this orchestration-only session, prefer `gpt-6-sol` at high effort in
+Codex or `claude-opus-5-5` at high effort in Claude. The host session selects its
 own model; worker/reviewer policies do not switch it. Respect an explicit user
 model choice and do not interrupt an active workflow solely to change models.
 

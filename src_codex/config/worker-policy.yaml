@@ -4,32 +4,32 @@ provider: codex
 workers:
   refinement:
     phases:
-      product: {model: gpt-5.6-sol, reasoning_effort: high}
+      product: {model: gpt-6-sol, reasoning_effort: high}
       design_handoff: {model: gpt-6-astra, reasoning_effort: max}
-      correction: {model: gpt-6-astra, reasoning_effort: high}
+      correction: {model: gpt-6-sol, reasoning_effort: high}
   implementation:
     phases:
-      story: {model: gpt-6-astra, reasoning_effort: max}
+      story: {model: gpt-6-sol, reasoning_effort: max}
       audit_remediation: {model: gpt-6-astra, reasoning_effort: max}
       debugging: {model: gpt-6-astra, reasoning_effort: max}
   diagnostic:
     phases:
-      investigate: {model: gpt-5.6-sol, reasoning_effort: high}
+      investigate: {model: gpt-6-sol, reasoning_effort: high}
 
 workers_on_budget:
   refinement:
     phases:
-      product: {model: gpt-5.6-sol, reasoning_effort: high}
+      product: {model: gpt-6-sol, reasoning_effort: high}
       design_handoff: {model: gpt-6-astra, reasoning_effort: high}
-      correction: {model: gpt-6-astra, reasoning_effort: max}
+      correction: {model: gpt-6-sol, reasoning_effort: max}
   implementation:
     phases:
-      story: {model: gpt-6-astra, reasoning_effort: max}
+      story: {model: gpt-6-sol, reasoning_effort: max}
       audit_remediation: {model: gpt-6-astra, reasoning_effort: max}
       debugging: {model: gpt-6-astra, reasoning_effort: max}
   diagnostic:
     phases:
-      investigate: {model: gpt-5.6-sol, reasoning_effort: high}
+      investigate: {model: gpt-6-sol, reasoning_effort: high}
 
 provider_settings:
   executable: codex

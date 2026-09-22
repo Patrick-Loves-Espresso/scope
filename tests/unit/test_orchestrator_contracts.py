@@ -239,9 +239,9 @@ def test_standalone_developer_roles_are_small_platform_mirrors() -> None:
     claude_path = ROOT / "src_claude/agents/developer.md"
     codex = read(codex_path)
     claude = read(claude_path)
-    assert "model: gpt-6-astra" in codex
+    assert "model: gpt-6-sol" in codex
     assert "model_reasoning_effort: max" in codex
-    assert "model: claude-fable-5-1" in claude
+    assert "model: claude-opus-5-5" in claude
     assert normalize_developer(codex) == normalize_developer(claude)
     require(codex, "standalone bounded developer role", "at most four times")
     for removed in (

@@ -183,7 +183,7 @@ completed_jobs:
   - job_id: gd-003.6-design-001
     phase: design
     provider: codex
-    model: gpt-5.6-sol
+    model: gpt-6-sol
     effort: max
     status: completed
     result_path: tmp_debug/.../result.json
