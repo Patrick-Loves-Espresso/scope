@@ -1653,7 +1653,10 @@ def _attribution_hash(evidence: Mapping[str, Any]) -> str:
 
 
 def _workspace_snapshot_sha256(
-    snapshot: Mapping[str, Any], evidence_relative: str
+    snapshot: Mapping[str, Any],
+    evidence_relative: str,
+    *,
+    include_directories: bool = False,
 ) -> str:
     epic_relative = Path(evidence_relative).parent.as_posix()
 
@@ -1678,7 +1681,7 @@ def _workspace_snapshot_sha256(
         for row in snapshot.get("entries", [])
         if isinstance(row, Mapping)
         and isinstance(row.get("path"), str)
-        and row.get("kind") != "directory"
+        and (include_directories or row.get("kind") != "directory")
         and included(str(row["path"]))
     ]
     entries.sort(key=lambda row: str(row["path"]))
@@ -1702,7 +1705,10 @@ def _validate_implementation_workspace_continuity(
         return
     expected = evidence.get("validated_workspace_sha256")
     actual = _workspace_snapshot_sha256(snapshot, evidence_relative)
-    if expected != actual:
+    legacy = _workspace_snapshot_sha256(
+        snapshot, evidence_relative, include_directories=True
+    )
+    if expected not in {actual, legacy}:
         raise ContractError(
             "workspace drifted after the last runner-validated implementation job"
         )
@@ -1978,10 +1984,14 @@ def verify_implementation_attribution(epic_dir: Path, working_root: Path) -> lis
         if evidence.get("attribution_sha256") != _attribution_hash(evidence):
             errors.append("implementation attribution_sha256 is stale")
         current_snapshot = capture_snapshot(root)
-        if evidence.get("validated_workspace_sha256") != _workspace_snapshot_sha256(
-            current_snapshot,
-            evidence_path.relative_to(root).as_posix(),
-        ):
+        evidence_relative = evidence_path.relative_to(root).as_posix()
+        current_hashes = {
+            _workspace_snapshot_sha256(current_snapshot, evidence_relative),
+            _workspace_snapshot_sha256(
+                current_snapshot, evidence_relative, include_directories=True
+            ),
+        }
+        if evidence.get("validated_workspace_sha256") not in current_hashes:
             errors.append(
                 "workspace differs from the last runner-validated implementation snapshot"
             )

@@ -807,6 +807,41 @@ def test_filtered_workspace_hash_ignores_empty_generated_directories(
     ) != RUNNER._workspace_snapshot_sha256(after_file, evidence_relative)
 
 
+def test_legacy_directory_inclusive_workspace_hash_is_accepted_until_promotion(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path / "repo")
+    scope = _scope(tmp_path / "scope")
+    job, _ = _job(repo, scope)
+    before = RUNNER.capture_snapshot(repo)
+    (repo / "src/value.txt").write_text("changed\n", encoding="utf-8")
+    after = RUNNER.capture_snapshot(repo)
+    result = _result(job, ["src/value.txt"])
+    RUNNER.promote_implementation_evidence(
+        job,
+        result,
+        ["src/value.txt"],
+        before,
+        after,
+        RUNNER._json_document_sha256(result),
+    )
+
+    evidence_path = repo / job["implementation_evidence_path"]
+    evidence = yaml.safe_load(evidence_path.read_text(encoding="utf-8"))
+    evidence["validated_workspace_sha256"] = RUNNER._workspace_snapshot_sha256(
+        after, job["implementation_evidence_path"], include_directories=True
+    )
+    evidence["attribution_sha256"] = RUNNER._attribution_hash(evidence)
+    RUNNER.atomic_write_yaml(evidence_path, evidence)
+
+    RUNNER._validate_implementation_workspace_continuity(
+        job, RUNNER.capture_snapshot(repo)
+    )
+    assert RUNNER.verify_implementation_attribution(
+        repo / "docs/epics/gd-001", repo
+    ) == []
+
+
 def test_evidence_promotion_records_deleted_state(tmp_path: Path) -> None:
     repo = _repo(tmp_path / "repo")
     scope = _scope(tmp_path / "scope")
