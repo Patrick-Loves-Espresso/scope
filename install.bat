@@ -10,7 +10,7 @@ rem   install.bat --user             Install to the user home directory
 rem   install.bat C:\path\to\project  Install to a custom target directory
 
 set "SCRIPT_DIR=%~dp0"
-set "VERSION=1.1.0"
+set "VERSION=2.0.0"
 set "SHARED_SRC=%SCRIPT_DIR%src_shared"
 set "CLAUDE_SRC=%SCRIPT_DIR%src_claude"
 set "CODEX_SRC=%SCRIPT_DIR%src_codex"
@@ -149,6 +149,29 @@ for %%F in (system-context architecture adr pdr test-strategy) do (
 call :delete_if_exists "%CLAUDE_DIR%\skills\project-documentation\templates-technical-arc42-c4\epic\acceptance-traceability.yaml"
 if errorlevel 1 goto :install_failed
 call :delete_if_exists "%CODEX_DIR%\skills\project-documentation\templates-technical-arc42-c4\epic\acceptance-traceability.yaml"
+if errorlevel 1 goto :install_failed
+
+rem Remove the retired Scope 2 lifecycle, replaced by the lean lifecycle in 2.0.0.
+for %%F in (scripts\validate-refinement.py scripts\audit-artifacts.py scripts\scope-wrap-finalize.py scripts\scope-dependency-merge.py scripts\scope_fingerprint.py scripts\scope_snapshot.py ^
+    scripts\scope_proofs.py scripts\scope-worker.py scripts\scope-reviewer.py scripts\scope_codegraph.py scripts\scope_git.py scripts\validate-architecture-contracts.sh ^
+    scripts\validate-epic-docs.sh config\audit-policy.yaml config\codegraph-policy.yaml config\execution-policy.yaml config\refinement-policy.yaml config\reviewer-policy.yaml ^
+    config\worker-job.schema.json config\worker-result.schema.json config\wrap-policy.yaml config\worker-policy.yaml workers\refinement-worker.md workers\implementation-worker.md ^
+    workers\diagnostic-worker.md commands\webepic_refine.md commands\webepic_implement.md commands\website_breakdown.md commands\content_refine.md governance\production-code-rules.md ^
+    governance\test-strategy-guide.md) do (
+    call :delete_if_exists "%CLAUDE_DIR%\%%F"
+    if errorlevel 1 goto :install_failed
+    call :delete_if_exists "%CODEX_DIR%\%%F"
+    if errorlevel 1 goto :install_failed
+)
+for %%F in (design.md delivery-manifest.yaml refinement-state.yaml refinement-findings.yaml implementation-evidence.yaml implementation-summary.md) do (
+    call :delete_if_exists "%CLAUDE_DIR%\skills\project-documentation\templates-technical-arc42-c4\epic\%%F"
+    if errorlevel 1 goto :install_failed
+    call :delete_if_exists "%CODEX_DIR%\skills\project-documentation\templates-technical-arc42-c4\epic\%%F"
+    if errorlevel 1 goto :install_failed
+)
+if exist "%CLAUDE_DIR%\skills\website-strategy\" rmdir /S /Q "%CLAUDE_DIR%\skills\website-strategy"
+if errorlevel 1 goto :install_failed
+if exist "%CODEX_DIR%\skills\website-strategy\" rmdir /S /Q "%CODEX_DIR%\skills\website-strategy"
 if errorlevel 1 goto :install_failed
 
 echo.

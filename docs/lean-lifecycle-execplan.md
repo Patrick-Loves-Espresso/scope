@@ -186,7 +186,14 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
   (black-box lifecycle with fake provider CLIs plus unit tests): 111 passed, 0
   failed, 0 errors, 0 skipped; 100% statement coverage of the new modules
   (subprocesses measured via `patch = subprocess`)
-- [ ] M3 Removal and updates
+- [x] 2026-09-23 M3: 60 files deleted (old scripts, 10 policy/schema files, old
+  workers, web-epic commands, `/content_refine`, website-strategy skill, old epic
+  templates, folded governance, 20 old test modules); agents rewritten lean;
+  `/sync_product`, `/lesson`, `/decision`, `/session-handoff`, `/audit_decisions`,
+  the documentation skill, `details.md` template, Codex skill and README updated;
+  installers (v2.0.0) remove retired files; PR checks rewritten (install smoke
+  with retired files seeded, budgets, provider-flag contract, tests);
+  `scripts/validate-pr-checks.sh` passes
 - [ ] M4 Scope docs
 - [ ] M5 Validation and report
 
@@ -209,6 +216,10 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 | L9 | Any unavailable or invalid reviewer is replaced by the fallback; verification by an unavailable raising reviewer also falls back | Plan D10; no all-provider barrier |
 | L10 | Antigravity's in-provider flash-model fallback is not carried over | Recovery machinery; Gemini is on-request only |
 | L11 | `DIRECTOR_BIN` is not set by the runner yet | D16: Director is integrated only after this rebuild |
+| L13 | `production-code-rules.md` and `test-strategy-guide.md` folded into `simplicity-and-size.md` and deleted; `developer-checklist.md` kept and rewritten | Plan §6 Step 1.2 ("fold or delete the rest"; the developer agent "and its checklist" reference the new file) |
+| L14 | `/sync_product` also resolves archived epics under `docs/epics/_implemented/` | `/wrap_epic` recommends it after the merge, when the epic is already archived |
+| L15 | Installer version 2.0.0 (both installers) | Breaking replacement of the lifecycle |
+| L16 | Windows CI runs the platform-independent unit tests instead of the retired worker-recovery test | The fake-provider lifecycle tests use POSIX shell wrappers |
 | L12 | Stale references to removed artifacts are fixed where they occur (`/audit_decisions`, `details.md` template, Codex docs); `/prd_breakdown` is left unchanged per plan | Removal consequence, not new design |
 
 ## Codex review #1 (design) dispositions

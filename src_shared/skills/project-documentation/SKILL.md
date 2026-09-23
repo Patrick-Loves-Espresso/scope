@@ -144,14 +144,12 @@ docs/
 │       └── adr/                  # Frontend-specific ADRs
 ├── epics/{epic-id-with-filesafe-title}/
 │   ├── details.md
-│   ├── acceptance-criteria.md
-│   ├── design.md
-│   ├── delivery-manifest.yaml
-│   ├── refinement-state.yaml
-│   ├── refinement-findings.yaml
-│   ├── file-plan-story-NN.yaml
-│   ├── implementation-evidence.yaml
-│   └── implementation-summary.md
+│   ├── acceptance-criteria.md   # approved at Gate 1
+│   ├── approvals.yaml           # Gate 1 record (orchestrator only)
+│   ├── plan.md                  # living plan
+│   ├── review.md                # refinement and audit findings
+│   └── verification.yaml        # runner verification record
+├── epics/_implemented/{epic}/    # epic folders archived on the epic branch
 ├── operations/
 │   ├── overview.md                # System inventory, access points, contacts
 │   ├── environments.md            # Environment matrix, infra details, access
@@ -178,6 +176,29 @@ docs/
     ├── notes.md
     └── postmortem.md
 ```
+
+---
+
+## Current-State Rule
+
+`docs/architecture/` holds the current state only: arc42 sections, specs,
+schemas, and ADRs. Superseded content is replaced, not appended. Nothing dated
+or in-progress goes there.
+
+Scope prescribes only these destinations:
+
+| Material | Destination |
+|---|---|
+| Epic working papers (briefs, red-team outputs, handoff or session prompts, checkpoints, evidence) | The epic folder, `docs/epics/<epic>/`, archived with the epic to `docs/epics/_implemented/<epic>/` |
+| Lasting architecture decisions | ADRs in the relevant `adr/` folder, rolled up in `09-adr-summary.md` |
+| Product decisions | `docs/product/decisions.md` |
+| Lessons | `docs/lessons-learned/` |
+| Current behavior and contracts | arc42 sections and `13-specs/` |
+
+Anything else not tied to one epic, such as cross-epic research or strategy
+snapshots, is the project's own business; it only has to stay out of
+`docs/architecture/`. `/implement` applies this rule when it finalizes an
+epic's documentation, and `/audit_epic` checks it.
 
 ---
 
@@ -364,9 +385,8 @@ ADRs are scoped by component to keep decisions close to the code they affect.
 **All ADRs share one global sequence** regardless of scope. This guarantees uniqueness and makes chronological ordering clear.
 
 **Before creating a new ADR:**
-1. Scan `09-adr-summary.md` for the highest existing ADR number
-2. Also check epic-level v3 `design.md` files for inline ADR sections
-3. Assign the next number in sequence
+1. Scan `09-adr-summary.md` and the `adr/` folders for the highest existing ADR number
+2. Assign the next number in sequence
 
 **File naming:** `ADR-{NNN}-{kebab-title}.md` in the scope's `adr/` directory.
 
@@ -465,95 +485,45 @@ contracts, and error contracts.
 
 ## Epic Documentation
 
-### Epic Required Files
-Every epic folder must contain these required artifacts:
-- `details.md`
-- `acceptance-criteria.md`
-- `design.md`
-- `delivery-manifest.yaml`
-- `refinement-state.yaml`
-- `refinement-findings.yaml`
-
-During refinement, the epic folder must also contain one or more
-`file-plan-story-*.yaml` implementation boundary plans before the epic can be
-marked ready-for-implementation.
-
-During implementation, the epic folder must also contain
-`implementation-evidence.yaml` before audit readiness can be verified.
+An epic folder holds the epic's contract and records; durable knowledge goes
+into the product and architecture docs above. Templates are in
+`templates-technical-arc42-c4/epic/`.
 
 ### Epic Folder Hygiene
-- Epic folders may contain only markdown and YAML files.
-- Do not place source code, generated code, cache directories, binaries, or OS artifacts in `docs/epics/...`.
-- `contracts.py` and any other implementation source files belong in the source package, not in epic docs.
+- Epic folders contain only Markdown and YAML files (plus the epic's working
+  papers), never source code, generated code, caches, or binaries.
+- `/implement` moves the folder to `docs/epics/_implemented/<epic>/` on the
+  epic branch before the audit.
 
 ### details.md
 **Template:** `templates-technical-arc42-c4/epic/details.md`
 **Content:** Intent, scope, non-goals, user value, success measures, constraints, dependencies, and risks
-**Frontmatter:** epic_id, title, status
-**Owners:** Product Owner, Architect
-**Readers:** SDET, Developer (rarely - use stories)
+**Owner:** `/prd_breakdown`
 
 ### acceptance-criteria.md
 **Template:** `templates-technical-arc42-c4/epic/acceptance-criteria.md`
-**Content:** Canonical observable behavior declared under stable `AC-*`, `ERR-*`, and `E2E-*` headings
-**Owner:** Product Owner
-**Readers:** Architect, SDET
-**Trigger:** After intent approval, before architecture design
+**Content:** Observable criteria under stable `AC-NNN` headings, including the error cases that matter; a `yaml scope` size estimate (production code lines, files, rationale); a "Not building" list; open product questions
+**Owner:** Planner; approved by the user at Gate 1
 
-### design.md
-**Template:** `templates-technical-arc42-c4/epic/design.md`
-**Content:** Repository evidence, PDR/ADR decisions, architecture and ownership, failure/partial states, capability-specific risks, hostile cases, verification strategy, and stable `DOC-NNN` documentation requirements
-**Owners:** Product Owner for product decisions; Architect for architecture and proof
-**Readers:** Developer, SDET, independent refinement reviewers, Epic Housekeeping
-**Trigger:** Product and architecture refinement
+### approvals.yaml
+**Template:** `templates-technical-arc42-c4/epic/approvals.yaml`
+**Content:** The Gate 1 record: blob hash and commit of the approved criteria, approval source and date
+**Owner:** Orchestrator only, through `scope_check.py approve`
 
-### delivery-manifest.yaml
-**Template:** `templates-technical-arc42-c4/epic/delivery-manifest.yaml`
-**Content:** Canonical risk, capability, acceptance, decision, dependency, story, artifact-ownership, proof, and manifest-v2 documentation-obligation assignments, including baseline viability for pre-existing runnable proofs. A v2 documentation row contains exactly `id`, owner `story`, repository-relative `path`, and canonical `requirement_ref`; v1 has no documentation obligations.
-**Owner:** Refinement workers; mechanically validated
-**Readers:** Implementer, Auditor, Epic Housekeeping
-**Trigger:** Created during product refinement and completed before independent review
+### plan.md
+**Template:** `templates-technical-arc42-c4/epic/plan.md`
+**Content:** Living plan in the ExecPlan style: approach referencing the durable docs, milestones, stories with complexity and estimates, validation commands, tests mapped to each criterion, documentation obligations, concepts, progress log, decision log, surprises
+**Owner:** Planner, then implementer
 
-### refinement-state.yaml
-**Template:** `templates-technical-arc42-c4/epic/refinement-state.yaml`
-**Content:** Workflow status, completed reviews, active findings reference, and hash-bound user authority for the product contract, decisions, accepted risk, and final handoff
-**Owner:** Scope deterministic tooling
-**Readers:** Orchestrator, Implementer, Auditor
-**Trigger:** Initialized when the first authority row is recorded and updated only through deterministic Scope commands
+### review.md
+**Template:** `templates-technical-arc42-c4/epic/review.md`
+**Content:** Every refinement and audit round with the reviewed commit, findings, dispositions, verification, adjudication, checks, and user decisions
+**Owner:** Scope's runner appends rounds; authors edit dispositions
 
-### refinement-findings.yaml
-**Template:** `templates-technical-arc42-c4/epic/refinement-findings.yaml`
-**Content:** Canonical review findings and inline durable correction/verification evidence; it never depends on prunable worker runtime files
-**Owner:** Scope review application plus bounded correction workers
-**Readers:** Refinement reviewers, Implementer, Auditor
-**Trigger:** Created for independent review and retained through handoff
-
-### refinement-review.md
-**Template:** None
-**Content:** Final evidence summary of reviewer assignments, findings, corrections, proof viability, and residual risk
-**Owner:** Finalize worker
-**Readers:** User, Implementer, Auditor
-**Trigger:** Created after independent findings are terminal and before final-handoff authority
-
-### file-plan-story-NN.yaml
-**Template:** None (format is the implementation boundary plan below)
-**Format:** YAML implementation boundary plan with `epic_id`, `story_id`, `story_title`, `depends_on`, `required_contracts`, `required_touchpoints`, `candidate_files`, `forbidden_changes`, and `proof_obligations`
-**Intent:** Defines binding contracts/touchpoints/forbidden changes/proof obligations and advisory candidate files. It is not a mandatory tactical file-edit list.
-**Owner:** Architect
-**Usage:** One file per story in `docs/epics/{epic-dir}/`
-
-### implementation-evidence.yaml
-**Template:** `templates-technical-arc42-c4/epic/implementation-evidence.yaml`
-**Content:** The current workspace fingerprint; for every executable story proof, its exact command, strict pass/fail/error/skip counts, summary, and durable evidence hashes; and the IDs of planned `external_blocked` proofs that remain declared unavailable rather than executed
-**Owner:** Scope implementation runner from validated worker results; mechanically verified before audit
-**Readers:** Auditor, Epic Housekeeping
-**Trigger:** Created and updated during implementation
-
-### implementation-summary.md
-**Template:** `templates-technical-arc42-c4/epic/implementation-summary.md`
-**Content:** Per-story summaries, lessons learned, implementation outcomes
-**Owner:** Implementation delivery-summary worker
-**Trigger:** After audit PASS and before delivery sealing
+### verification.yaml
+**Template:** `templates-technical-arc42-c4/epic/verification.yaml`
+**Content:** One run per milestone: tested commit, commands, JUnit counts, skip reasons, criterion results, size, unavailable evidence, log location
+**Owner:** Scope's runner only
 
 ---
 
@@ -721,13 +691,12 @@ On conversation start, read docs/lessons-learned/INDEX.md for project-specific l
 
 | Agent | Writes | Reads (Primary) |
 |-------|--------|-----------------|
-| **Product Owner** | product/*, epic details/acceptance criteria, PDR sections in epic `design.md` | architecture/10-quality.md |
-| **Architect** | architecture trees and ADR files outside delivery, epic `design.md`, manifest judgment including documentation obligations, story plans | product/{strategy,definition}.md |
-| **SDET** | - | product/definition.md, architecture testing/quality docs, epic acceptance criteria and `design.md` |
-| **Developer (backend)** | story-owned code/tests and only manifest-assigned documentation targets | backend architecture/ADRs, cross-cutting docs, epic `design.md` |
-| **Developer (frontend)** | story-owned code/tests and only manifest-assigned documentation targets | frontend architecture/ADRs, cross-cutting docs, epic `design.md` |
-| **Delivery Summary** | implementation summary only | epic `design.md`, durable implementation/audit evidence |
-| **Security Reviewer** | security architecture and security ADRs | architecture security/quality docs and epic `design.md` |
+| **Product Owner / Planner** | product/*, epic acceptance criteria, PDRs in `product/decisions.md` | architecture/10-quality.md |
+| **Architect / Planner** | architecture trees, ADR files, epic `plan.md` | product/{strategy,definition}.md |
+| **SDET** | - | product/definition.md, architecture testing/quality docs, epic acceptance criteria and `plan.md` |
+| **Developer / Implementer (backend)** | story code/tests and the plan's documentation obligations | backend architecture/ADRs, cross-cutting docs, epic `plan.md` |
+| **Developer / Implementer (frontend)** | story code/tests and the plan's documentation obligations | frontend architecture/ADRs, cross-cutting docs, epic `plan.md` |
+| **Security Reviewer** | security architecture and security ADRs | architecture security/quality docs and epic `plan.md` |
 | **DevOps** | architecture/{07,08}/operations.md | architecture/{03,07,08}*.md, architecture/backend/{03-context,07-deployment}.md |
 | **Operations (RE)** | operations/* | architecture/{07,08-cross-cutting}*.md, architecture/backend/*.md |
 
@@ -743,14 +712,6 @@ On conversation start, read docs/lessons-learned/INDEX.md for project-specific l
 - Numbered Arc42: `01-` through `12-`
 
 **Frontmatter (YAML):** Use for epic metadata only. Keep minimal.
-
-**Implementation boundary plan format:**
-- Keep binding obligations compact and concrete.
-- Put required public interfaces under `required_contracts`.
-- Put required integration surfaces under `required_touchpoints`.
-- Put likely-but-advisory paths under `candidate_files`.
-- Put protected surfaces under `forbidden_changes`.
-- Put required test/runtime proof under `proof_obligations`.
 
 **Token efficiency:**
 - Agents load only pages they need (use direct paths from epic docs)

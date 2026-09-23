@@ -12,7 +12,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VERSION="1.1.0"
+VERSION="2.0.0"
 
 SHARED_SRC="${SCRIPT_DIR}/src_shared"
 CLAUDE_SRC="${SCRIPT_DIR}/src_claude"
@@ -131,6 +131,27 @@ done
 rm -f "${CLAUDE_DIR}/skills/project-documentation/templates-technical-arc42-c4/epic/acceptance-traceability.yaml"
 rm -f "${CODEX_DIR}/skills/project-documentation/templates-technical-arc42-c4/epic/acceptance-traceability.yaml"
 
+# Remove the retired Scope 2 lifecycle, replaced by the lean lifecycle in 2.0.0.
+for retired in \
+    scripts/validate-refinement.py scripts/audit-artifacts.py scripts/scope-wrap-finalize.py \
+    scripts/scope-dependency-merge.py scripts/scope_fingerprint.py scripts/scope_snapshot.py \
+    scripts/scope_proofs.py scripts/scope-worker.py scripts/scope-reviewer.py \
+    scripts/scope_codegraph.py scripts/scope_git.py scripts/validate-architecture-contracts.sh \
+    scripts/validate-epic-docs.sh config/audit-policy.yaml config/codegraph-policy.yaml \
+    config/execution-policy.yaml config/refinement-policy.yaml config/reviewer-policy.yaml \
+    config/worker-job.schema.json config/worker-result.schema.json config/wrap-policy.yaml \
+    config/worker-policy.yaml workers/refinement-worker.md workers/implementation-worker.md \
+    workers/diagnostic-worker.md commands/webepic_refine.md commands/webepic_implement.md \
+    commands/website_breakdown.md commands/content_refine.md governance/production-code-rules.md \
+    governance/test-strategy-guide.md; do
+    rm -f "${CLAUDE_DIR}/${retired}" "${CODEX_DIR}/${retired}"
+done
+for retired_template in design.md delivery-manifest.yaml refinement-state.yaml refinement-findings.yaml implementation-evidence.yaml implementation-summary.md; do
+    rm -f "${CLAUDE_DIR}/skills/project-documentation/templates-technical-arc42-c4/epic/${retired_template}"
+    rm -f "${CODEX_DIR}/skills/project-documentation/templates-technical-arc42-c4/epic/${retired_template}"
+done
+rm -rf "${CLAUDE_DIR}/skills/website-strategy" "${CODEX_DIR}/skills/website-strategy"
+
 echo ""
 echo -e "${YELLOW}Installing Claude Files${NC}"
 echo ""
@@ -148,7 +169,7 @@ copy_overlay "${CLAUDE_SRC}/agents" "${CLAUDE_DIR}/agents"
 copy_overlay "${SHARED_SRC}/workers" "${CLAUDE_DIR}/workers"
 copy_overlay "${SHARED_SRC}/governance" "${CLAUDE_DIR}/governance"
 copy_overlay "${CLAUDE_SRC}/governance" "${CLAUDE_DIR}/governance"
-for executable in scope-worker.py scope-reviewer.py scope-dependency-merge.py scope-wrap-finalize.py; do
+for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py; do
     [[ ! -f "${CLAUDE_DIR}/scripts/${executable}" ]] || chmod +x "${CLAUDE_DIR}/scripts/${executable}"
 done
 
@@ -206,7 +227,7 @@ copy_file_if_exists "${CODEX_SRC}/README.md" "${CODEX_DIR}/README.md"
 copy_file_if_exists "${CODEX_SRC}/.mcp.json" "${CODEX_DIR}/.mcp.json"
 copy_file_if_exists "${SCRIPT_DIR}/requirements.txt" "${CLAUDE_DIR}/requirements.txt"
 copy_file_if_exists "${SCRIPT_DIR}/requirements.txt" "${CODEX_DIR}/requirements.txt"
-for executable in scope-worker.py scope-reviewer.py scope-dependency-merge.py scope-wrap-finalize.py; do
+for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py; do
     [[ ! -f "${CODEX_DIR}/scripts/${executable}" ]] || chmod +x "${CODEX_DIR}/scripts/${executable}"
 done
 

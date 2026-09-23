@@ -93,19 +93,19 @@ UNTRACKED_FILES="$(git ls-files --others --exclude-standard 2>/dev/null || true)
 Also inspect likely Scope artifacts when present:
 
 - `docs/epics/*/details.md`
-- `docs/epics/*/delivery-manifest.yaml`
-- `docs/epics/*/refinement-state.yaml`
-- `docs/epics/*/implementation-evidence.yaml`
-- `docs/epics/*/audit-findings.yaml`
-- `docs/epics/*/epic_audit.md`
-- `docs/epics/*/reviews/audit-*/audit-attempt.yaml`
-- `docs/epics/*/reviews/*/reviewer-receipt.yaml`
-- `.scope/*/*summaries*.jsonl`
+- `docs/epics/*/acceptance-criteria.md` and `approvals.yaml` (Gate 1 record)
+- `docs/epics/*/plan.md` (story status, progress log, decision log)
+- `docs/epics/*/review.md` (latest refine or audit round and open findings)
+- `docs/epics/*/verification.yaml` (latest run, tested commit, outcome)
+- the same files under `docs/epics/_implemented/*/` for epics archived on an
+  epic branch, and worktrees under `wip/`
 - `session-handoff.md` if it already exists
 
-For each detected epic/workflow artifact, record only factual state such as file
-paths, latest timestamps, statuses explicitly present in files, and latest audit
-attempt directories. Do not infer a phase or action unless an artifact states it.
+For each detected epic, record only factual state: file paths, latest
+timestamps, story statuses and the latest review round or verification run as
+the files state them. When Scope is installed, `scope_review.py status` gives
+an epic's review state. Do not infer a phase or action unless an artifact
+states it.
 
 ### Step 3: Draft Proposed Confirmation Fields
 

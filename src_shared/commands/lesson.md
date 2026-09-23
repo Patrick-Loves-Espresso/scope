@@ -162,14 +162,13 @@ Analyze these sources for lessons:
 
 **Source 1: Durable delivery evidence — failures, retries, and corrections**
 ```python
-summaries = Glob("docs/epics/**/implementation-summary.md")
-evidence = Glob("docs/epics/**/implementation-evidence.yaml")
-findings = Glob("docs/epics/**/audit-findings.yaml")
-reviews = Glob("docs/epics/**/reviews/**/reviewer-receipt.yaml")
+verification = Glob("docs/epics/**/verification.yaml")
+reviews = Glob("docs/epics/**/review.md")
+plans = Glob("docs/epics/**/plan.md")
 # Look for:
-# - failed or repeated proof attempts
-# - major/blocking findings and their remediations
-# - implementation deviations and repeated reviewer findings
+# - failed verification runs and what fixed them
+# - blocking/major findings, still_open outcomes, diagnoses, and adjudications
+# - "Surprises and discoveries" and decision-log entries in plans
 ```
 
 **Source 2: Git history — fix patterns**
@@ -183,9 +182,9 @@ git log --since="{since_date}" --name-only --pretty=format: | sort | uniq -c | s
 
 **Source 3: Epic audit findings**
 ```python
-# Check for audit reports with CRITICAL/MAJOR findings
-audits = Glob("docs/epics/*/epic_audit.md")
-# Parse for issues that were found and fixed
+# Audit rounds in each review.md: findings that were fixed, rejected, or
+# failed a fix more than once
+audits = Glob("docs/epics/**/review.md")
 ```
 
 **Source 4: Code patterns that suggest past pain**

@@ -29,39 +29,38 @@ ignored plugin files into a linked worktree. A new command started directly in
 a worktree must have its own installation rather than silently selecting an
 unrelated checkout.
 
-The refinement/audit validators and bounded worker runner require Python 3 and
-the packages installed with:
+Scope's lifecycle scripts (launcher, verification runner, checker) require
+Python 3 and the packages installed with:
 
 ```bash
 python3 -m pip install -r plugins/scope/requirements.txt
 ```
 
-CodeGraph 1.5+ is optional and CLI-only. When `.codegraph/` is Git-ignored,
-Scope prepares the active repository or worktree index once per command run and
-incrementally refreshes it between implementation write jobs. Workers receive
-query-only guidance and one compact run-level status. Missing or degraded
-CodeGraph falls back to direct repository inspection without reducing proof.
+CodeGraph is optional and CLI-only. When the `codegraph` CLI is installed, the
+lifecycle commands run one `codegraph sync` (or `init` when `.codegraph/` is
+missing and git-ignored) in the checkout or worktree they work in; workers and
+reviewers only query it.
 
-The shared runners invoke the authenticated Claude CLI directly in headless
-mode for workers and independent reviewers. Reviewer prompts use stdin and
-review Markdown uses stdout; no PTY wrapper is involved. Windows CI validates
-installed assets and one Codex supervisor-recovery path; this local macOS
-validation did not produce a Windows execution receipt and does not cover
-Claude worker or reviewer execution.
+The launcher invokes the provider CLIs directly in headless mode: Codex
+(`codex exec`), Claude (`claude --print --safe-mode`), and, as the independent
+fallback reviewer, OpenCode with Muse Spark. Windows CI validates the installed
+assets and the platform-independent unit tests; the lifecycle tests with fake
+provider CLIs run on macOS and Linux.
 
 ## Porting Model
 
-- `commands/` contains the public conversational orchestrators and the thin deterministic wrap playbook.
-- `workers/` contains the bounded roles launched in fresh controlled provider processes by `epic_refine`, `implement`, and `audit_epic`.
-- `agents/` contains standalone Scope role definitions used by workflows that have not moved to bounded workers.
+- `commands/` contains the public conversational orchestrators.
+- `workers/` contains the planner, implementer, and reviewer prompts launched in fresh provider processes by `scripts/scope_launch.py`.
+- `agents/` contains standalone Scope role definitions for work outside the lifecycle commands.
 - `skills/` contains reusable documentation and tracking skills.
-- `governance/` contains production quality rules and checklists.
+- `governance/` contains the simplicity-and-size rules appended to every worker and reviewer prompt, and the developer checklist.
+- `config/scope-policy.yaml` is Scope's single policy file (model routing, reviewers, fallback, timeouts, size limits).
 - `docs/` contains Scope reference documentation.
 
 ## Differences From Claude Code
 
 - Claude slash commands are not native Codex commands. They are invoked by natural language, usually `scope:<command>`.
-- The three worker-backed workflows use Scope's shared runner rather than native subagent inheritance, so model, effort, access, lifecycle, and structured results are deterministic.
+- The lifecycle commands launch workers and reviewers through Scope's launcher rather than native subagents, so model, effort, and sandbox are set by the policy file.
 - Claude task tools are replaced by `.scope/` tracking files and Codex task plans where practical.
 - MCP servers must be configured in Codex separately. Scope deliberately uses
   the CodeGraph CLI rather than a CodeGraph MCP; the plugin's `.mcp.json`

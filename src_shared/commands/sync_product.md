@@ -65,9 +65,11 @@ If `epic-id` provided, focuses on changes from that epic. Otherwise, syncs all p
 EPIC_ID="${1:-}"  # Optional
 
 if [ -n "$EPIC_ID" ]; then
-  EPIC_DIR=$(ls docs/epics/ | grep -i "^${EPIC_ID}" | head -1)
-  if [ -z "$EPIC_DIR" ]; then
-    echo "Epic not found in docs/epics/"
+  # Active or implemented (archived) epic folder
+  EPIC_FOLDER=$(find docs/epics docs/epics/_implemented -mindepth 1 -maxdepth 1 -type d \
+    -iname "${EPIC_ID}*" ! -name "_*" 2>/dev/null | head -1)
+  if [ -z "$EPIC_FOLDER" ]; then
+    echo "Epic not found in docs/epics/ or docs/epics/_implemented/"
     exit 1
   fi
 fi
@@ -81,11 +83,10 @@ If epic provided, analyze epic for product-impacting changes:
 
 ```python
 # Sources to check
-epic_design = Read(f"docs/epics/{epic_dir}/design.md")
-epic_acceptance = Read(f"docs/epics/{epic_dir}/acceptance-criteria.md")
-delivery_manifest = Read(f"docs/epics/{epic_dir}/delivery-manifest.yaml")
-implementation_summary = Read(f"docs/epics/{epic_dir}/implementation-summary.md")
-implementation_evidence = Read(f"docs/epics/{epic_dir}/implementation-evidence.yaml")
+epic_acceptance = Read(f"{epic_folder}/acceptance-criteria.md")  # approved scope and "Not building"
+epic_plan = Read(f"{epic_folder}/plan.md")                      # approach, concepts, decision log
+epic_review = Read(f"{epic_folder}/review.md")                  # accepted or rejected scope findings
+epic_verification = Read(f"{epic_folder}/verification.yaml")    # what was verified on which commit
 
 # Detect product-level changes
 changes = {

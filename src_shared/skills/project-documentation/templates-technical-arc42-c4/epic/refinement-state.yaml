@@ -1,7 +1,0 @@
-schema_version: 1
-epic_id: EPIC-ID
-status: drafting
-user_decisions: []
-completed_review_ids: []
-active_findings:
-  path: refinement-findings.yaml
