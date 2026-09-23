@@ -1,6 +1,10 @@
 # SCOPE - Simple Claude/Codex Orchestrator for Product Engineering
 
-**Status:** Implementation
+**Status:** Implementation (Scope 2.0, the lean lifecycle)
+
+The design rationale and the evidence behind it are in
+[`scope-simplification-plan.md`](scope-simplification-plan.md). This document
+describes how Scope works now. For Codex, read `/command` as `scope:command`.
 
 ---
 
@@ -8,664 +12,378 @@
 
 - [1. Overview](#1-overview)
 - [2. File Structure](#2-file-structure)
-- [3. User Workflow](#3-user-workflow)
-- [4. Commands](#4-commands)
-- [5. Agents](#5-agents)
-- [6. Skills](#6-skills)
-- [7. Core Concepts](#7-core-concepts)
-- [8. Epic Lifecycle](#8-epic-lifecycle)
-- [9. Documentation Structure](#9-documentation-structure)
-- [10. Architectural Decisions](#10-architectural-decisions)
+- [3. Commands](#3-commands)
+- [4. The Epic Lifecycle](#4-the-epic-lifecycle)
+- [5. Epic Artifacts](#5-epic-artifacts)
+- [6. Launcher, Runner, and Checker](#6-launcher-runner-and-checker)
+- [7. Review Rules](#7-review-rules)
+- [8. Verification Rules](#8-verification-rules)
+- [9. Simplicity and Size](#9-simplicity-and-size)
+- [10. Agents and Skills](#10-agents-and-skills)
+- [11. Documentation Structure](#11-documentation-structure)
+- [12. Architectural Decisions](#12-architectural-decisions)
+- [13. Guardrails Against Regrowth](#13-guardrails-against-regrowth)
 
 ---
 
 ## 1. Overview
 
-SCOPE is a Claude Code and Codex framework for epic lifecycle management. It
-provides public command contracts, bounded worker roles, deterministic
-validators, standalone agents, and documentation skills.
+Scope makes AI coding agents work like a disciplined product team that the
+user directs rather than babysits: aligned with the user's intent, grounded in
+durable documentation, and independently verified before anything is merged.
 
-The public command is the sole conversational orchestrator. For
-`epic_refine`, `implement`, and `audit_epic`, it derives state from durable
-artifacts and deterministic validators, then launches fresh bounded provider
-processes for repository work. The command retains approval gates and all user
-communication.
+What carries the value, and is kept:
+
+- the user approves the acceptance criteria (Gate 1) and the exact merged
+  commit (Gate 2);
+- durable documentation is an output of every epic, and the audit checks the
+  docs against the code in both directions;
+- a different provider reviews the plan and audits the result, and rejected
+  findings are adjudicated by someone other than the author;
+- tests are executed by Scope's runner, never reported by a model;
+- implementation happens in a git worktree.
+
+What Scope no longer does: story groups, debugging jobs, hash-bound receipts,
+seals, manifests and their legacy readers, full-tree snapshots, all-provider
+preflight barriers, and custom proof parsers. Git records what changed and
+when; a small set of epic files records what was approved, reviewed, and
+verified.
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                         User Commands                             │
-│                                                                   │
-│   /prd_create [product]    Create first-pass PRD from interview  │
-│   /prd_refine [product]    Refine product requirements           │
-│   /prd_breakdown           Break PRD into epics                  │
-│   /epic_refine {epic-id}   Refine epic (contract-first)          │
-│   /implement {epic-id}     Implement (developer writes tests)    │
-│   /audit_epic {epic-id}    Audit implementation                  │
-│   /wrap_epic {epic-id}     Verify, archive, commit, and merge    │
-│   /sync_product [epic-id]  Sync product documentation            │
-└────────────────────────────────┬─────────────────────────────────┘
-                                 │
-                                 ▼
-┌──────────────────────────────────────────────────────────────────┐
-│               Claude Code or Codex (Orchestrator)                 │
-│                                                                   │
-│   - Executes command workflows step-by-step                      │
-│   - Derives workflow state from durable artifacts                │
-│   - Launches bounded workers with structured jobs/results        │
-│   - Manages git worktrees for implementation                     │
-│   - Handles user approval gates                                  │
-└────────────────────────────────┬─────────────────────────────────┘
-                                 │
-              ┌──────────────────┼──────────────────┐
-              │                  │                   │
-              ▼                  ▼                   ▼
-┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-│   Agent Files     │  │   Skills          │  │   Documentation   │
-│                   │  │                   │  │                   │
-│   architect       │  │   project-        │  │   docs/product/   │
-│   developer       │  │    documentation  │  │   docs/arch/      │
-│   product-owner   │  │    tracking       │  │   docs/releases/  │
-└──────────────────┘  └──────────────────┘  └──────────────────┘
+ user ──► command (Claude Code or Codex session: the only orchestrator)
+               │
+               ├── scope_launch.py work    ──► planner / implementer (host provider)
+               ├── scope_launch.py review  ──► Claude + Codex reviewers (read-only)
+               │                                └─ Muse Spark fallback
+               ├── scope_verify.py         ──► runs the plan's validation commands
+               ├── scope_review.py         ──► finding states from review.md
+               └── scope_check.py          ──► criteria, plan, Gate 1, Gate 2, merge
 ```
 
 ---
 
 ## 2. File Structure
 
-### 2.1 This Project (SCOPE Repository)
+### 2.1 This Repository
 
 ```
 scope/
 ├── src_shared/
-│   ├── commands/                           # Cross-platform workflow contracts
-│   ├── workers/                            # Bounded refinement/implementation/audit roles
-│   ├── scripts/                            # Runner, reviewer, and validators
-│   ├── config/                             # Policies and strict JSON schemas
-│   ├── agents/                             # Shared standalone roles
-│   ├── skills/                             # Documentation and tracking skills
-│   └── governance/                         # Production quality rules and checklists
-├── src_claude/
-│   ├── commands/                           # Claude-specific commands
-│   └── agents/                             # Claude role overrides
-├── src_codex/
-│   ├── commands/                           # Codex-specific commands
-│   ├── agents/                             # Codex role overrides
-│   ├── skills/                             # Codex workflow guidance
-│   ├── docs/                               # Installed Codex reference docs
-│   └── .codex-plugin/                      # Plugin manifest
-├── tests/unit/                             # Deterministic runtime/contract tests
-└── docs/                                   # Repository documentation
+│   ├── commands/        # Workflow commands (shared by Claude and Codex)
+│   ├── workers/         # planner.md, implementer.md, reviewer.md
+│   ├── scripts/         # scope_launch, scope_providers, scope_review, scope_verify, scope_check, scope_common
+│   ├── config/          # scope-policy.yaml (the only policy file)
+│   ├── governance/      # simplicity-and-size.md, developer-checklist.md
+│   ├── agents/          # Standalone roles
+│   ├── skills/          # project-documentation, project-tracking
+│   └── docs/            # Reference docs installed for Codex
+├── src_claude/agents/   # Claude model routing for the developer agent
+├── src_codex/           # Codex plugin manifest, workflow skill, docs, developer agent
+├── tests/
+│   ├── workflow/        # Black-box lifecycle test with fake provider CLIs
+│   └── unit/            # Focused tests of the scripts
+└── docs/                # This document, the simplification plan, lessons
 ```
 
-### 2.2 Target Project Structure
-
-After installing SCOPE skills into a target project:
+### 2.2 Target Project
 
 ```
-user-project/
-├── .claude/
-│   ├── commands/                           # Claude workflow contracts
-│   │   ├── prd_refine.md
-│   │   ├── prd_breakdown.md
-│   │   ├── epic_refine.md
-│   │   ├── implement.md
-│   │   ├── audit_epic.md
-│   │   ├── wrap_epic.md
-│   │   └── sync_product.md
-│   │
-│   ├── agents/                             # Standalone role definitions
-│   │   ├── architect.md
-│   │   ├── developer.md
-│   │   └── product-owner.md
-│   │
-│   ├── workers/                            # Fresh bounded worker contracts
-│   ├── scripts/                            # Runner, reviewer, and validators
-│   ├── config/                             # Policies and strict schemas
-│   └── skills/                             # Shared skills
-│       ├── project-documentation/
-│       │   ├── SKILL.md
-│       │   ├── templates-product-atlassian/
-│       │   └── templates-technical-arc42-c4/
-│       └── project-tracking/
-│           ├── SKILL.md
-│           └── {backend}.md
-│
-├── plugins/scope/                          # Equivalent Codex plugin assets
-│   ├── commands/
-│   ├── agents/
-│   ├── workers/
-│   ├── scripts/
-│   ├── config/
-│   ├── skills/
-│   └── docs/
-│
-├── .scope/
-│   └── config.yaml                         # Project configuration
-│
-├── docs/                                   # Documentation (local files)
-│   ├── product/                            # Product documentation
-│   ├── architecture/                       # Arc42 technical documentation
-│   ├── epics/{epic-id}/                    # Per-epic documentation
-│   └── releases/{version}/                 # Release documentation
-│
-├── wip/                               # Worktrees for implementation
-│   └── {epic-id}/                          # Worktree per epic
-│       ├── .git                            # Worktree link
-│       └── src/                            # Code changes
-│
-└── src/                                    # Application source code
+your-project/
+├── .claude/ or plugins/scope/   # commands, workers, scripts, config, governance, agents, skills
+├── docs/
+│   ├── product/                 # strategy, definition, reference, decisions.md (PDRs)
+│   ├── architecture/            # current state only: arc42 01-13, ADRs, 13-specs
+│   ├── epics/<epic>/            # the epic's files while it is being refined and built
+│   ├── epics/_implemented/<epic>/
+│   └── lessons-learned/
+├── wip/<epic-id>/               # worktree on branch epic/<epic-id>
+└── tmp_debug/scope-runs/<epic>/ # git-ignored prompts, transcripts, and test logs
 ```
-
-**Key points:**
-- Documentation is always local markdown files in `docs/`
-- Implementation happens in git worktrees under `wip/`
-- Main branch holds refinement artifacts; worktrees hold implementation
-- Canonical workflow state and reviewer receipts remain in epic/audit
-  artifacts; only runner snapshots, prompts, and logs live under `tmp_debug/`
 
 ---
 
-## 3. User Workflow
+## 3. Commands
 
-The complete product development pipeline:
+| Command | What it does |
+|---|---|
+| `/prd_create` | Interview the user for a first-pass PRD |
+| `/prd_refine` | Refine the PRD with a checklist |
+| `/prd_breakdown` | Break the PRD into epics with dependencies |
+| `/epic_refine {epic}` | Criteria and Gate 1, plan, one review by Claude and Codex |
+| `/implement {epic}` | Worktree, one implementer, runner verification, then the audit |
+| `/audit_epic {epic}` | Two-provider audit with fix, verify, and adjudication |
+| `/wrap_epic {epic}` | Gate 2 on the exact commit and the pinned merge |
+| `/sync_product [epic]` | Update product docs after scope-changing work |
+| `/re_documentation`, `/re_ops` | Reverse engineer docs from an existing codebase |
+| `/decision`, `/lesson`, `/audit_decisions` | Capture decisions and lessons |
+| `/session-handoff` | Write an ephemeral handoff for a fresh session |
 
-```
-Create PRD draft or run /prd_create
-       │
-       ▼
-/prd_refine [product]          Interactive PRD refinement
-       │                       (checklist-driven, discovery updates)
-       ▼
-/prd_breakdown                 Convert PRD → epics
-       │                       (architecture, dependency analysis)
-       ▼
-/epic_refine {epic-id}         Adaptive epic refinement
-       │                       (product + final authority, native contracts)
-       ▼
-/implement {epic-id}          Story-by-story implementation
-       │
-       ▼
-/audit_epic {epic-id}          Read-only evidence audit
-       │                       (one full + one targeted verification)
-       ▼
-/wrap_epic {epic-id}           Verify seal, archive, approved exact merge
-```
-
-**Supporting commands:**
-- `/sync_product [epic-id]` - Sync product docs when implementation changes product scope
+Each lifecycle command prompt is at most 150 lines. The prompts describe the
+orchestration; the scripts do the deterministic work.
 
 ---
 
-## 4. Commands
+## 4. The Epic Lifecycle
 
-Each public command is a workflow contract in Markdown with YAML frontmatter.
-The three worker-backed commands keep orchestration in that contract and put
-repository execution behind shared worker/result schemas.
-
-| Command | Description | Execution context | Supporting context |
-|---------|-------------|-------------------|--------------------|
-| `/prd_create` | Lightweight interview to create a first-pass PRD | (inline) | project-documentation |
-| `/prd_refine` | Interactive PRD refinement with checklist | (inline) | project-documentation |
-| `/prd_breakdown` | Convert PRD into implementable epics | (inline) | project-documentation, project-tracking |
-| `/epic_refine` | Contract-first epic refinement, product and final authority | fresh refinement workers + independent reviewers | durable epic artifacts and validators |
-| `/implement` | Story implementation, proof, nested audit, and remediation | fresh implementation workers | boundary plans, governance, and validators |
-| `/audit_epic` | Read-only evidence and semantic audit | deterministic tooling + independent reviewers + audit synthesis worker | durable audit artifacts and validators |
-| `/wrap_epic` | Verify and close an already completed delivery | deterministic finalizer after one bound approval | delivery seal, exact staged tree, and hardened Git helpers |
-| `/sync_product` | Sync product docs after implementation | (inline) | project-documentation |
-
-### Command Frontmatter
-
-```yaml
----
-name: implement
-description: Orchestrate bounded story workers through proof, audit, remediation, and delivery evidence.
-args: "{epic-id}"
----
+```text
+/prd_breakdown ─► details.md
+/epic_refine
+  1. planner drafts acceptance-criteria.md (size estimate, "not building")
+  2. GATE 1: user approves → approvals.yaml (blob hash + commit)
+  3. planner writes plan.md
+  4. Claude + Codex review (high effort); fix or reject; verify; adjudicate
+/implement  (worktree wip/<epic>, branch epic/<epic>)
+  5. one implementer: commit per story, size check per story, runner per milestone
+  6. docs finalized, epic folder archived on the branch
+  7. final runner verification
+/audit_epic
+  8. Claude + Codex audit (docs <-> code); fix, verify, adjudicate until settled
+/wrap_epic
+  9. GATE 2: user approves the exact commit
+ 10. --no-ff merge of that commit with approval trailers; worktree removed
 ```
 
-- `name` - Slash command name
-- `description` - What the command does
-- `args` - Expected arguments
-- `skills` - Optional skills used by commands that still require them
-- `agents` - Optional agent definitions used by non-worker workflows
+### 4.1 `/epic_refine`
 
-### Bounded Workers
+Runs in the main checkout. A planner job drafts `acceptance-criteria.md`;
+`scope_check.py criteria` checks its structure; product questions go to the
+user in one batch. At Gate 1 the user approves the criteria, the size
+estimate, and the "not building" list as shown; `scope_check.py approve`
+commits the file and records its git blob hash and commit in `approvals.yaml`.
+A planner job then writes `plan.md`, which `scope_check.py plan` checks. One
+full review by Claude and Codex follows, and the orchestrator loops on
+`scope_review.py status` (section 7) until the review is settled.
 
-`epic_refine`, `implement`, and `audit_epic` launch shared worker roles from
-`workers/` through `scripts/scope-worker.py`. Each fresh process receives one
-job packet, a role prompt, exact read/write boundaries, validation obligations,
-and a strict result schema. The runner owns the write lock, one pre/post
-snapshot for write jobs, timeout, cancellation, and compact recovery state
-under ignored `tmp_debug/`. Independent
-semantic review is launched separately through
-`scripts/scope-reviewer.py` and remains read-only.
+Epics planned by Scope 1.x are re-planned: their old-format artifacts are
+removed with a commit, and the criteria are re-drafted and re-approved.
 
----
+### 4.2 `/implement`
 
-## 5. Agents
+Requires approved, unchanged criteria, a valid plan, and a settled refinement
+review. It creates `wip/<epic>` on branch `epic/<epic>` and launches one
+implementer, which works through the plan, commits per story, runs
+`scope_verify.py size` after each story and `scope_verify.py run` at each
+milestone, finalizes the durable docs, and archives the epic folder to
+`docs/epics/_implemented/`. It stops with `needs_check` for a size overrun or
+a departure from the reviewed plan (a new migration, a changed permission
+boundary, a new or changed external contract, a dropped proof or doc
+obligation); another provider classifies it. Scope growth goes to the user;
+implementation growth continues and is shown at Gate 2. A change to the
+criteria is re-approved on the branch. The orchestrator then runs the final
+verification and executes `/audit_epic`.
 
-Agents are Markdown files that define persona, responsibilities, and
-constraints for workflows and standalone roles that have not moved to bounded
-workers. The three worker-backed commands do not use native subagent inheritance
-for repository execution.
+### 4.3 `/audit_epic`
 
-| Agent | File | Role |
-|-------|------|------|
-| **Architect** | `architect.md` | System design, story breakdown, implementation boundary plans, ADRs, contracts |
-| **Developer** | `developer.md` | Implements stories, writes tests, follows implementation boundary plan intent |
-| **Product Owner** | `product-owner.md` | Business requirements, acceptance criteria, PDRs |
-| **RE Architect** | `reverse-engineer-architect.md` | Reverse-engineer architecture from existing code |
-| **RE Product Owner** | `reverse-engineer-po.md` | Reverse-engineer product requirements from existing code |
-| **RE Operations** | `reverse-engineer-ops.md` | Reverse-engineer operational behavior and runbooks |
+Claude and Codex audit the branch: the diff against the criteria, the plan and
+its decision log, the verification record and its logs, and the final docs
+against the code in both directions. They also flag over-engineering in the
+delivered code. The implementer fixes or rejects findings, the runner
+re-verifies, and the loop of section 7 continues until settled. If a provider
+is unavailable, Muse Spark replaces it; if two independent reviewers still
+cannot complete, the audit is incomplete and blocks Gate 2.
 
-The worker-backed epic commands use `workers/*.md` through `scope-worker.py`,
-not these standalone role files or native Task inheritance. The runner permits
-one write worker per working root and records one result plus one completed-job
-row before the command advances.
+### 4.4 `/wrap_epic`
 
----
-
-## 6. Skills
-
-### 6.1 Project Documentation
-
-**File:** `src_shared/skills/project-documentation/SKILL.md`
-
-Local markdown files in `docs/`. The skill defines:
-- Folder structure (`docs/product/`, `docs/architecture/`, `docs/epics/`, `docs/releases/`)
-- Operations: `read(path)`, `write(path, content)`, `search(pattern)`, `list(path)`
-- Templates for product docs (Atlassian Blueprint pattern) and technical docs (Arc42+C4)
-
-**Configuration:**
-```yaml
-# .scope/config.yaml
-documentation:
-  root: ./docs
-```
-
-### 6.2 Project Tracking
-
-**File:** `src_shared/skills/project-tracking/SKILL.md`
-
-Wrapper skill that dispatches to a configured backend. Supports:
-- Local file-based tracking
-- Jira (Atlassian MCP or Sooperset MCP)
-- GitHub issues
-
-**Configuration:**
-```yaml
-# .scope/config.yaml
-tracking:
-  skill: project-tracking-file   # or jira-atlassian-mcp, jira-sooperset-mcp
-```
-
-**Note:** Project tracking is optional. Many commands work without it. The documentation skill is the primary requirement.
+`scope_check.py gate2` confirms that the criteria match their approval, the
+audit is complete, settled, and still covers the branch, and the verification
+covers the branch head, then prints the Gate 2 summary. After the user
+approves that exact SHA, `scope_check.py merge` re-checks, refuses if the
+branch moved, merges the commit into the base branch with `--no-ff` and the
+trailers `Scope-Approved-Commit`, `Scope-Approved-By`, and `Scope-Approved-On`,
+and removes the worktree. The approved branch is never modified. Only an
+explicit user request records a waiver for an incomplete audit; it is a quality
+risk, never a pass.
 
 ---
 
-## 7. Core Concepts
+## 5. Epic Artifacts
 
-### 7.1 Native Contracts
+| File | Written by | Content |
+|---|---|---|
+| `details.md` | `/prd_breakdown` | Goal, scope, non-goals |
+| `acceptance-criteria.md` | Planner; approved by the user | `AC-NNN` criteria, size estimate, "not building", open questions |
+| `approvals.yaml` | `scope_check.py approve` only | Blob hash and commit of the approved criteria, source, date |
+| `plan.md` | Planner, then implementer | ExecPlan: approach, milestones, stories, validation, criterion→test map, doc obligations, concepts, logs |
+| `review.md` | `scope_launch.py` (rounds), authors (dispositions) | All findings with dispositions, verification, adjudication, checks, user decisions |
+| `verification.yaml` | `scope_verify.py run` only | One run per milestone: tested commit, commands, counts, criteria, size, problems |
 
-Scope uses the contract mechanism appropriate to each boundary: OpenAPI, JSON
-Schema, SQL, event schemas, configuration schemas, language interfaces, or
-project-native validators. Python Protocols and `mypy` are optional, not
-workflow requirements.
-
-### 7.2 Git Worktrees
-
-Implementation happens in git worktrees, not on the main branch.
-
-```
-/implement {epic-id}
-  → Creates worktree at wip/{epic-id} on branch epic/{epic-id}
-  → All stories implemented in the worktree
-  → Audit PASS and delivery summary are sealed without committing
-  → /wrap_epic archives and merges the exact seal-bound delta after approval
-  → Worktree cleanup remains a separate user decision
-```
-
-### 7.3 Artifact-Derived Worker State
-
-The worker-backed public commands derive the next legal phase or story from
-epic/audit artifacts and deterministic validation output. The runner records
-job, process, result, and recovery summaries under ignored
-`tmp_debug/scope-runs/`; those operational records do not become a second
-semantic workflow ledger or permanent evidence source. For implementation
-jobs, the runner—not the worker—promotes observed path identities and proof
-provenance into durable `implementation-evidence.yaml`.
-
-### 7.4 Story Sizing
-
-Create the fewest independently verifiable stories that preserve useful
-dependency, rollout, and proof boundaries. Scope does not impose a fixed story
-count, file count, or line count.
-
-### 7.5 Inter-Story Dependencies
-
-Dependencies are parsed from each boundary plan's YAML `depends_on` field. The
-public command validates them and launches one eligible implementation worker
-at a time, preserving the declared order and one-writer invariant.
-
-### 7.6 Test-as-Soon-as-Possible
-
-Write tests at the earliest point where the test becomes possible:
-- **Unit tests:** Always in each story
-- **Integration tests:** When component integration exists in that story
-- **E2E tests:** When user flow completes in that story
-
-### 7.7 Cross-Epic Test Evolution
-
-Tests evolve progressively across epics rather than being written all at once:
-```
-Epic 1: user_lifecycle_journey.test.ts
-  ✅ User logs in → ✅ User sees dashboard → 🔵 Future → ✅ User logs out
-
-Epic 2 (extends):
-  ✅ User logs in → ✅ User sees dashboard → ✅ User updates profile → ✅ User logs out
-```
-
-Tests organized by user journey, not by epic.
-
-### 7.8 Production-Ready Code Rules
-
-- File plan intent is the source of truth for what a file does
-- No stubs, placeholders, or TODO implementations
-- No mock-only code that passes tests but fails integration
-- Fail-fast: no fallbacks or hardcoded values masking bugs
-
-### 7.9 Audit Loop Guard
-
-`/audit_epic` runs one full read-only audit. Implementation remediates named
-findings, then audit performs one targeted verification. Additional full audits
-require a material approved boundary change or explicit user authorization.
-
-### 7.10 Context Window Optimization
-
-- Worker prompts contain only the bounded role contract
-- Job packets carry the epic, phase/story, exact paths, and validation commands
-- Workers fetch authorized repository context on demand via direct file paths
-- Progressive disclosure: parent files link to details, agents load only what's needed
+Machine-read parts of `acceptance-criteria.md` and `plan.md` are fenced blocks
+tagged `yaml scope`. **Evidence commits:** `verification.yaml` names the tested
+commit; a later commit stays covered only when it changes nothing but
+`verification.yaml` or `review.md`.
 
 ---
 
-## 8. Epic Lifecycle
+## 6. Launcher, Runner, and Checker
 
-### 8.1 Refinement (`/epic_refine`)
+| Script | Responsibility |
+|---|---|
+| `scope_providers.py` | Provider command lines, preflight, run with timeout and process-tree kill |
+| `scope_launch.py` | `work` (planner, implementer) and `review` (full, verify, adjudicate, check, diagnose) jobs |
+| `scope_review.py` | `review.md` parsing, finding states, `status`, user `decide` |
+| `scope_verify.py` | `run`, `size`, `covers`, `lines` |
+| `scope_check.py` | `criteria`, `approve`, `plan`, `gate2`, `merge`, `waive` |
 
-Adaptive epic refinement with two preapprovable authority gates:
+Every script prints JSON. Provider invocation keeps the flags proven in Scope
+1.x: Claude runs with `--print --safe-mode --strict-mcp-config --no-chrome
+--no-session-persistence --permission-mode dontAsk`, and its reviewers may use
+only read tools and read-only `git`/`codegraph` commands; Codex runs `exec
+--ephemeral --ignore-user-config` with a `read-only` sandbox for reviewers and
+`workspace-write` for workers (implementers in a worktree also get the git
+directory via `--add-dir` so they can commit); OpenCode runs `--pure --agent
+plan`; Antigravity runs `--sandbox`. Preflight checks each CLI's version,
+flags, authentication, or model catalog. Reviewers run in parallel; there is
+no all-provider barrier.
 
-```
-Phase 1: Observable product contract and negative cases
-  → PRODUCT-CONTRACT AUTHORITY
-
-Phase 2: Repository-grounded architecture and native contracts
-
-Phase 3: Story boundaries and proof obligations
-  → RUN EACH PRE-EXISTING PROOF ONCE
-
-Phase 4: Independent review and bounded correction
-  → FINAL HANDOFF AUTHORITY
-```
-
-**Output:** A canonical `delivery-manifest.yaml`, evidence-backed `design.md`,
-native contracts, per-story boundary plans, durable findings, and
-`refinement-state.yaml` containing hash-bound authority.
-
-### 8.2 Implementation (`/implement`)
-
-**`/implement`:**
-```
-Optional Story 0: Architect-authored content or shared scaffolding
-Story 1-N: Developer implements and proves each boundary-plan obligation
-After all stories: Project-native tests, static checks, runtime proof, and audit
-```
-
-**Orchestration:** The public command validates dependency order and launches a
-fresh bounded worker for each eligible story. It verifies the result hash,
-actual changed paths, durable proof evidence, and story boundary before
-advancing. Material product, architecture, or operations documentation is a
-manifest v2 obligation owned by an implementation story, so it is current
-before audit rather than rewritten during wrap. After audit PASS, the delivery
-summary is written and the deterministic finalizer seals the exact audited
-workspace.
-
-### 8.3 Audit (`/audit_epic`)
-
-Audit is read-only and evidence based:
-
-1. validate the implementation handoff and durable evidence;
-2. derive scoped acceptance and gate rows from canonical artifacts;
-3. run project-native evidence gates;
-4. execute risk-directed reviewer roles in fresh contexts;
-5. merge stable findings and return `PASS`, `FAIL`, or `BLOCKED`;
-6. after remediation, verify named findings in one targeted attempt.
-
-**Output:** `docs/epics/{epic-dir}/epic_audit.md`
-
-**Post-audit flow:**
-1. Implementation remediates `remediation_required` findings.
-2. The user resolves decision-gated findings.
-3. Audit performs one targeted verification.
-
-### 8.4 Closure (`/wrap_epic`)
-
-`/wrap_epic` is a thin controller over the deterministic wrap finalizer. It
-verifies the durable seal without relying on prunable runtime logs, stages only
-the sealed delta plus the epic archival rename, and presents the staged tree,
-fixed labels, and current main HEAD for one approval. The finalizer then commits
-that exact tree, rechecks main HEAD under both mutation locks, merges the exact
-closure commit, verifies the merge, and refreshes CodeGraph at the main root.
-
-Wrap does not discover decisions or lessons, author documentation, regenerate
-the implementation summary, infer dirty-file ownership, or write a tracking
-marker. Incomplete deliveries return `NOT_READY` without mutation; automated
-abandonment remains explicitly deferred.
-
-The finalizer neutralizes Git hooks, fsmonitor commands, injected Git
-environment, replace refs, and grafts. Repository-configured merge drivers and
-clean/process filters remain enabled so legitimate custom merges and Git LFS
-continue to work; the selected repository's local Git configuration is therefore
-an explicit trust boundary.
-
-### 8.5 Supporting Operations
-
-- **`/sync_product`** - When implementation reveals product-level changes (new capabilities, terminology changes, scope shifts), updates `docs/product/` accordingly
+The launcher appends `governance/simplicity-and-size.md` to every worker and
+reviewer prompt, so the rules reach the model without depending on it choosing
+to read them. `config/scope-policy.yaml` holds the model routing (workers per
+host provider, reviewers per workflow), the standard and fallback reviewers,
+timeouts, and the size limits.
 
 ---
 
-## 9. Documentation Structure
+## 7. Review Rules
 
-Documentation uses two complementary standards:
+Reviewer rounds are appended to `review.md`, each with the commit it reviewed.
+Findings are `blocking`, `major`, or `minor`; severity is not maximized across
+reviewers. Suggestions are optional and untracked.
 
-### Product Documentation (Atlassian Blueprint Pattern)
-
-```
-docs/product/
-├── overview.md               # Auto-generated parent with links
-├── strategy.md               # Vision, markets, problems, scope
-├── definition.md             # Use cases, capability map
-├── reference/
-│   ├── feature-catalog.md    # Features with status, priority, release
-│   ├── terminology.md        # Domain terms, key entities
-│   ├── ux-workflows.md       # Navigation, screens, workflows
-│   └── apis-integrations.md  # External integrations
-└── decisions.md              # Product Decision Records (PDR)
-```
-
-### Technical Documentation (Arc42 + C4)
-
-```
-docs/architecture/
-├── 01-intro.md               # System purpose, stakeholders, quality goals
-├── 02-constraints.md         # Technical, organizational constraints
-├── 03-context.md             # C4 L1 context diagram
-├── 04-strategy.md            # Solution approach, technology decisions
-├── 05-building-blocks.md     # C4 L2/L3 component diagrams
-├── 06-runtime.md             # Key scenarios, sequence diagrams
-├── 07-deployment.md          # Infrastructure, deployment
-├── 08-cross-cutting/         # Domain, security, operations, testing
-├── 09-adr-summary.md         # Architecture Decision Records
-├── 10-quality.md             # Quality requirements
-├── 11-risks.md               # Risks, technical debt
-├── 12-glossary.md            # Architecture terms
-├── 13-specs/                 # System API contracts, schemas, database specs
-│   ├── api/
-│   ├── schemas/              # Schemas live here; do not create 14-schema
-│   ├── database/
-│   └── errors/
-├── backend/                  # Backend-specific Arc42 01-13 tree
-│   ├── 01-intro.md
-│   ├── 02-constraints.md
-│   ├── 03-context.md
-│   ├── 04-strategy.md
-│   ├── 05-building-blocks.md
-│   ├── 06-runtime.md
-│   ├── 07-deployment.md
-│   ├── 08-cross-cutting/
-│   ├── 09-adr-summary.md
-│   ├── 10-quality.md
-│   ├── 11-risks.md
-│   ├── 12-glossary.md
-│   ├── 13-specs/
-│   └── adr/
-└── frontend/                 # Frontend-specific Arc42 01-13 tree
-    ├── 01-intro.md
-    ├── 02-constraints.md
-    ├── 03-context.md
-    ├── 04-strategy.md
-    ├── 05-building-blocks.md
-    ├── 06-runtime.md
-    ├── 07-deployment.md
-    ├── 08-cross-cutting/
-    ├── 09-adr-summary.md
-    ├── 10-quality.md
-    ├── 11-risks.md
-    ├── 12-glossary.md
-    ├── 13-specs/
-    └── adr/
-```
-
-`13-specs/` is the canonical location for machine-readable contracts: OpenAPI,
-JSON/YAML schemas, database specs, queue/message specs, and error contracts.
-Do not create a separate `14-schema`; schemas belong in `13-specs/schemas/`.
-
-Legacy component docs may exist in older projects:
-`backend/overview.md`, `backend/services.md`, `backend/data.md`,
-`frontend/overview.md`, `frontend/structure.md`, and `frontend/patterns.md`.
-Read them as context when present, but do not create or extend them. New or
-updated backend/frontend documentation uses the component `01-intro.md` through
-`13-specs/` tree.
-
-### Epic Documentation
-
-```
-docs/epics/{epic-id}/
-├── details.md                  # Goal, scope, non-goals, lifecycle status
-├── acceptance-criteria.md      # Canonical observable product behavior
-├── design.md                   # Evidence, decisions, architecture, failures, proof
-├── delivery-manifest.yaml      # Risk, acceptance, decisions, stories, proof ownership
-├── refinement-state.yaml       # Workflow state and hash-bound user authority
-├── file-plan-story-*.yaml      # Per-story implementation boundaries
-├── refinement-findings.yaml    # Independent review findings
-├── refinement-review.md        # Approved implementation handoff
-├── implementation-evidence.yaml # Runner-observed paths and proof provenance
-├── implementation-summary.md   # Post-audit delivery summary
-├── delivery-seal.yaml          # Deterministic closure boundary
-└── epic_audit.md               # Terminal audit report
-```
-
-### Agent Documentation Responsibilities
-
-| Agent | Writes | Reads |
-|-------|--------|-------|
-| **Product Owner** | product/*, epics/*/details, acceptance-criteria, product decisions in design | architecture/10-quality |
-| **Architect** | architecture/*, epics/*/design, native contracts, boundary plans | product/strategy, product/definition |
-| **Developer** | code, tests, proof results, and required documentation targets | architecture/08-cross-cutting/*, epics/*/design, boundary plans |
-| **Runner/finalizer** | durable implementation evidence and delivery seal | worker results, Git identities, audit artifacts, delivery manifest |
+- **Dispositions.** The author (planner or implementer) sets `fixed`,
+  `rejected` (with a reason), `disproportionate` (a minor fix that would add a
+  requirement or mechanism), or `duplicate of <id>`, and may raise a minor to
+  major.
+- **Verification.** The reviewer that raised a finding verifies the fix. A
+  verification pass checks only named findings and adds nothing new; it
+  repeats only for findings still open. Fixed minors ride along with a pass
+  that runs anyway; otherwise they close unverified.
+- **Rejections.** A rejected blocking or major finding, any
+  `disproportionate` rejection, and any security or data-integrity rejection go
+  back to the raising reviewer. If it maintains the finding, the uninvolved
+  provider adjudicates from scratch; when both providers raised it, the
+  fallback does. Product-scope disputes go to the user. Other rejected minors
+  stand as accepted quality tradeoffs, shown at Gate 2.
+- **Stuck findings.** Two failed fixes trigger an independent diagnosis and a
+  fresh author; a failure after the diagnosis goes to the user only for a
+  product choice, an accepted risk, or more resources, and otherwise blocks
+  the epic. No finding is accepted because a budget ran out.
+- **Complete, fresh, settled.** A review is complete when two distinct
+  providers completed a full round, fresh when nothing but evidence changed
+  since the last reviewing round's commit, and settled when it is complete,
+  fresh, and every finding is closed.
 
 ---
 
-## 10. Architectural Decisions
+## 8. Verification Rules
 
-### 10.1 Conversational Orchestrator and Bounded Workers
+`scope_verify.py run` requires a clean, committed state. It runs each
+validation command of the plan with `sh -c`, replacing `{junit}` with a log
+path, and reads the JUnit XML that standard reporters write (pytest
+`--junitxml`, `gotestsum --junitfile`, a Jest JUnit reporter). A run fails on
+a non-zero exit, a missing JUnit file, a failure or error in the XML, or a skip
+without a reason. Each criterion's mapped tests must have run and passed;
+`command:<id>` maps a criterion to an exit-code-only command and is recorded as
+such. Milestone runs require the criteria of finished stories; `final` and
+`remediation` runs require all. Coverage of new and changed code is checked by
+a standard tool declared as a `check` command.
 
-Public commands own user decisions, the product/final gates, status, and lifecycle.
-Fresh Scope-managed provider processes perform one refinement phase,
-implementation story or remediation batch, or audit-synthesis pass. The shared
-runner enforces structured results, one mutation at a time, timeout,
-cancellation, scoped write snapshots, and three-case recovery. Its small
-`run.yaml` contains operational job summaries only; semantic state and closure
-evidence remain in canonical epic and audit artifacts.
+`scope_verify.py size` counts production code lines added since the epic
+branch forked (comments, docstrings, and blank lines excluded, by pygments)
+against the plan's cumulative estimate for finished stories. Growth above 1.5×
+(D3) triggers an independent check; after an accepted implementation-growth
+check, the 1.5× test applies to the growth since then. It also reports each
+changed module's code lines against 350/450 and changes outside the planned
+paths.
 
-Worker routing is provider-local. A Codex installation reads
-`plugins/scope/config/worker-policy.yaml`; a Claude installation reads
-`.claude/config/worker-policy.yaml`. Each file defines `workers` (quality) and
-`workers_on_budget`; the orchestrator selects the profile at run initialization.
-The worker receives only its bounded job, never the routing profile.
+---
 
-Product refinement and diagnostic investigation use pinned `gpt-6-sol` or
-`claude-opus-5-5` at high effort in both profiles. Codex corrections and story
-groups use Sol; design/handoff, audit remediation, and debugging retain Astra.
-Claude worker phases use Opus 5.5 at their phase-specific effort. Routing is per
-phase, not per-job complexity. The orchestration-only host session should also
-use Sol high or Opus 5.5 high, selected in the host rather than by worker policy.
+## 9. Simplicity and Size
 
-Completed jobs record the requested model and raw model IDs reported by Claude
-Code `modelUsage` without maintaining a version-sensitive fallback-family
-taxonomy. The Claude reviewer uses CLI text output directly; because that
-transport does not report resolved model IDs, its receipt marks actual-model and
-transparent-fallback status as unavailable rather than treating the requested
-model as proof of execution.
+`governance/simplicity-and-size.md` is the one governance file every worker
+and reviewer receives. It states the over-engineering tendency it counters and
+the rules: build the minimum that satisfies the criteria, validate only at
+boundaries, handle only errors that can occur, no single-use abstractions,
+reuse first, fewer concepts and lines. Story complexity is scored 0–10 with a
+maximum of 7; modules target 350 code lines with a hard limit of 450. Above a
+limit the agent splits or records an exception that a reviewer judges; the
+runner only reports.
 
-Independent reviewers use shared `reviewer-policy.yaml`. Reviewer profile
-(`default` or `budget`) and reviewer set (`standard` or `expanded`) are separate
-choices bound into the durable review packet/attempt and receipt. Expanded
-review can add Antigravity/Gemini 3.1 Pro High and OpenCode/Muse Spark 1.3 Contributor (high) without
-changing the primary provider used for workers.
+---
 
-#### CodeGraph-assisted repository investigation
+## 10. Agents and Skills
 
-Workers and independent reviewers use the CodeGraph 1.5+ CLI, never its MCP.
-The shared lifecycle policy initializes only a Git-ignored missing index and
-prepares it once per command run. Implementation incrementally synchronizes it
-before each new write job; refinement and read-only audit do not repeat the
-lifecycle. Agents receive query-only commands and one compact
-ready/degraded/unavailable state.
-Focused `explore`/`node` queries accelerate navigation and relationship
-analysis; direct source, tests, and validators remain authoritative. Affected
-tests require explicit configured filters and supplement rather than replace
-the workflow's required validation.
+Standalone agents (`architect`, `developer`, `product-owner`, and the
+reverse-engineering roles) serve work outside the lifecycle commands; inside
+them, the worker prompts in `workers/` apply.
 
-### 10.2 Native Contracts over Generic Prose
+- **project-documentation**: the documentation structure, templates (arc42 +
+  C4 technical, Atlassian Blueprint product, epic templates), and the
+  current-state rule.
+- **project-tracking**: local YAML tracking by default; Jira adapters optional.
 
-Epic refinement selects a project-appropriate machine-verifiable contract for
-each important boundary. No language-specific contract type is mandatory.
+---
 
-### 10.3 Local Files for Documentation
+## 11. Documentation Structure
 
-Documentation is always local markdown files in `docs/`. Files are in git alongside code. Agents read/write directly. Follows Arc42+C4 and Atlassian Blueprint patterns for structure.
+`docs/architecture/` holds the current state only: arc42 sections, specs,
+schemas, and ADRs. Superseded content is replaced, not appended; nothing dated
+or in-progress goes there. Epic working papers stay in the epic folder,
+lasting decisions become ADRs (listed in `09-adr-summary.md`), product
+decisions go to `docs/product/decisions.md`, lessons to
+`docs/lessons-learned/`, and current behavior and contracts to the arc42
+sections and `13-specs/`. The implementer applies this rule when it finalizes
+an epic's docs, and the audit checks it.
 
-### 10.4 One Worker Per Story
+System, backend, and frontend architecture each use the arc42 `01`–`13` tree
+(`docs/architecture/`, `backend/`, `frontend/`); `13-specs/` is the canonical
+home of machine-readable contracts.
 
-A single agent implements the complete story. Splitting across agents creates context coordination complexity. Story boundaries align with technical component boundaries.
+---
 
-### 10.5 Test-as-Soon-as-Possible
+## 12. Architectural Decisions
 
-Tests are written at the earliest possible point, not deferred to epic end. Fixing issues in closed stories is expensive (context lost). Early testing catches issues while context is fresh.
+**12.1 One orchestrator, fresh workers.** The command is the only process that
+talks to the user. Workers and reviewers run in fresh provider processes with
+their own context, so the plan, not a conversation, carries the work.
 
-### 10.6 Architect-Led Story Breakdown
+**12.2 One implementer by default.** Current models sustain a whole epic.
+Milestones, per-story commits, and the plan's logs make a long job resumable;
+the orchestrator may split the work when size, context, integrations, or
+uncertainty warrant it.
 
-Architect leads story breakdown; Product Owner validates business alignment. Technical boundaries drive story structure (component alignment, dependencies).
+**12.3 Git is the record.** Per-story commits replace attribution machinery;
+the Gate 1 record is a blob hash and a commit; the merge approval lives in the
+merge commit's trailers.
 
-### 10.8 Implementation Boundary Plan Intent Documentation
+**12.4 Cross-provider review with adjudication.** Claude and Codex catch
+different defects. The author never has the final word on a finding against
+its own work.
 
-Each file in the plan has a 600-1200 character intent with 5-part structure:
+**12.5 Runner-executed tests with standard reporters.** Scope parses JUnit XML
+from standard tooling instead of maintaining its own result formats.
 
-1. **WHAT** (~100 chars): Core functionality
-2. **WHY** (~150-250 chars): Architectural purpose
-3. **RESPONSIBILITIES** (~150-250 chars): Key functions (3-5)
-4. **DEPENDENCIES** (~100-150 chars): Module dependencies
-5. **RELATED MODULES** (~100-150 chars): Positive delegation
+**12.6 Native contracts over prose.** Plans and docs use project-native
+contract forms (OpenAPI, schemas, SQL) in `13-specs/`.
 
-Use positive delegation ("session encryption via SessionStore") instead of negation ("Does NOT handle encryption") to avoid confusing semantic search routing.
+**12.7 Local files for documentation.** Docs are Markdown in `docs/`, versioned
+with the code.
+
+**12.8 CodeGraph is optional.** When the CLI is installed, commands sync the
+index once and workers and reviewers query it read-only; Scope does not manage
+its lifecycle.
+
+---
+
+## 13. Guardrails Against Regrowth
+
+Two earlier simplifications grew back. To keep this one small:
+
+- **Complexity budget:** lifecycle Python ≤ 3,000 lines, modules ≤ 450 code
+  lines, each lifecycle command prompt ≤ 150 lines, one policy file.
+  `scripts/validate-pr-checks.sh` reports the totals on every PR.
+- **Every new rule states the model weakness it assumes** and how to test
+  whether it is still needed.
+- **Incidents go to lessons-learned first.** Code is added only when a lesson
+  recurs and no simpler fix exists.
+- **Periodic ablation:** each quarter, or on a major model release, run one
+  epic with a component removed.

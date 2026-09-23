@@ -194,7 +194,9 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
   installers (v2.0.0) remove retired files; PR checks rewritten (install smoke
   with retired files seeded, budgets, provider-flag contract, tests);
   `scripts/validate-pr-checks.sh` passes
-- [ ] M4 Scope docs
+- [x] 2026-09-23 M4: `README.md` and `docs/scope-architecture.md` rewritten (with
+  the §6 regrowth guardrails), Codex copies synced, CONTRIBUTING updated,
+  superseded plans deleted (D12); PR checks pass
 - [ ] M5 Validation and report
 
 ## Decision log
