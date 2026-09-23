@@ -44,7 +44,8 @@ cd "$WT"
 ```
 
 If `codegraph` is on PATH, index the worktree: `codegraph sync` when
-`.codegraph/` exists, else `codegraph init` when it is git-ignored.
+`.codegraph/` exists, else `codegraph init` when
+`git check-ignore -q .codegraph/` succeeds.
 
 ## 1. Implement
 

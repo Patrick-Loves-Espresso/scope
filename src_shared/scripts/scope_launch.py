@@ -180,9 +180,11 @@ def _run_reviewer(args, root, epic, review, policy, out, assignment) -> dict[str
     prompt = reviewer_prompt(args, root, epic, review, assignment["findings"])
     (out / f"prompt-{provider}.md").write_text(prompt, encoding="utf-8")
     timeout = policy["timeouts_seconds"]["reviewer"]
+    index = root / ".codegraph"  # a read-only Codex sandbox cannot open the CodeGraph database otherwise
     argv = providers.command(provider, model=selected["model"], effort=selected["effort"], root=root, write=False,
                              output_path=out / f"review-{provider}.md", prompt=prompt, timeout=timeout,
-                             read_only_commands=policy["reviewer_read_only_commands"])
+                             read_only_commands=policy["reviewer_read_only_commands"],
+                             add_dirs=[index] if provider == "codex" and index.is_dir() else [])
     result = providers.run(argv, provider=provider, prompt=prompt, cwd=root, stdout_path=out / f"{provider}.stdout",
                            stderr_path=out / f"{provider}.stderr", timeout=timeout)
     text, _ = providers.final_message(provider, out / f"{provider}.stdout", out / f"review-{provider}.md")

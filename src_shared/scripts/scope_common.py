@@ -33,7 +33,7 @@ def git(root: Path, *args: str, check: bool = True) -> str:
     result = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True)
     if check and result.returncode != 0:
         raise ScopeError(f"git {' '.join(args)} failed: {(result.stderr or result.stdout).strip()}")
-    return result.stdout.strip()
+    return result.stdout.rstrip()  # keep leading spaces: `status --porcelain` lines start with them
 
 
 def repo_root(value: str | None) -> Path:

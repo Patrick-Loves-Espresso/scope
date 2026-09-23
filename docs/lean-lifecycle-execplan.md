@@ -256,3 +256,18 @@ Suggestions taken: script paths quoted in prompts; commands run with `sh -c`
 - Codex loads the user's global `AGENTS.md` even with `--ignore-user-config`
   (a test commit reply carried the user's "--Response #N" rule). Relevant for
   D16 later; no action now.
+- Dry run: the machine's Claude CLI (2.1.278) could not run `claude-opus-5-5`
+  (needs ≥ 2.1.280). Preflight passed (flags, auth) but the job failed in 2 s
+  with the API message surfaced in the job JSON; the user updated the CLI.
+  Preflight does not probe model support (no catalog command for Claude).
+- `git check-ignore .codegraph` reports "not ignored" for a missing directory
+  when the ignore pattern is `.codegraph/`; the prompts now use
+  `git check-ignore -q .codegraph/`.
+- Dry run bug: `scope_common.git()` stripped leading whitespace, so the first
+  `git status --porcelain` line of a modified tracked file lost a character
+  (`ocs/epics/...`), producing a false planner warning and skewing freshness
+  and coverage checks. Fixed (`rstrip`) with a regression test; the fake
+  provider tests had only untracked files.
+- Dry run gap: a Codex read-only reviewer could not open the CodeGraph
+  database. The old runner passed `--add-dir <index>` to Codex reviewers; that
+  harvested detail had been dropped and is restored with a test.

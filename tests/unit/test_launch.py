@@ -385,3 +385,21 @@ def test_user_decisions_are_recorded_and_reopen_upheld_findings(planned, fake):
             expect=1,
         )["error"]
     )
+
+
+def test_changed_paths_keep_their_first_character_for_modified_tracked_files(planned, fake, monkeypatch):
+    git(planned, "add", "-A")
+    git(planned, "commit", "-q", "-m", "plan")
+    (planned / "pytest.ini").write_text("[pytest]\npythonpath = src\n# edited\n")
+    monkeypatch.setenv("FAKE_MESSAGE", "Done.\nSTATUS: done")
+    result = work(planned)
+    assert result["changed"] == ["pytest.ini"]
+    assert result["warnings"] == [f"planner changed files outside {EPIC_DIR}/: ['pytest.ini']"]
+
+
+def test_codex_reviewers_get_the_codegraph_index_when_it_exists(planned, fake):
+    (planned / ".codegraph").mkdir()
+    review(planned, "refine", "full")
+    codex = next(c["args"] for c in calls(fake) if c["provider"] == "codex")
+    claude = next(c["args"] for c in calls(fake) if c["provider"] == "claude")
+    assert codex[codex.index("--add-dir") + 1] == str(planned / ".codegraph") and "--add-dir" not in claude
