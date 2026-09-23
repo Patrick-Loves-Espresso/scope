@@ -92,6 +92,7 @@ def check_plan(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]
     commands = data.get("validation") or []
     command_ids = [entry.get("id") for entry in commands]
     errors += ["validation: no commands declared"] if not commands else []
+    errors += [f"duplicate validation id {key}" for key, count in Counter(command_ids).items() if count > 1]
     errors += [f"validation {entry.get('id')}: needs id, command, and type test or check" for entry in commands
                if not (entry.get("id") and entry.get("command") and entry.get("type") in ("test", "check"))]
     tests = data.get("acceptance_tests") or {}
@@ -120,8 +121,10 @@ def gate2(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]:
         problems.append(f"audit findings still open: {audit['pending']}")
     if not audit["fresh"]:
         problems.append("the branch changed after the last audit review round; review the change")
-    if not audit["complete"] and not audit["waiver"]:
-        problems.append(f"audit incomplete: only {audit['providers_completed']} completed")
+    unwaived = [provider for provider in audit["missing_reviews"] if provider not in audit["waived"]]
+    if not audit["complete"] and (unwaived or not audit["providers_completed"]):
+        problems.append(f"audit incomplete: completed {audit['providers_completed']}, missing {unwaived}; retry "
+                        "the missing reviewers, or the user may explicitly waive each missing review")
     covered = scope_verify.coverage(root, epic)
     if not covered["covered"]:
         problems.append(f"verification does not cover the branch head: {covered['reason']}")
@@ -129,7 +132,7 @@ def gate2(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]:
     size = scope_verify.size_report(root, epic, policy)
     plan_text = (epic / "plan.md").read_text(encoding="utf-8")
     plan_estimate = size["estimate"] or {}
-    waived = f"INCOMPLETE (waived: {'; '.join(audit['waiver'])})" if audit["waiver"] else "INCOMPLETE"
+    waived = f"INCOMPLETE (waiver: {'; '.join(audit['waiver'])})" if audit["waiver"] else "INCOMPLETE"
     verdict = "passed" if audit["complete"] else waived
     closed = {state: [key for key, row in audit["findings"].items() if row["state"] == state]
               for state in ("closed", "closed_unverified", "closed_rejected", "accepted_tradeoff")}
@@ -228,10 +231,13 @@ def cmd_waive(args: argparse.Namespace) -> None:
     root = repo_root(args.root)
     epic = find_epic(root, args.epic)
     path = epic / "review.md"
-    if reviews.summary(reviews.parse(path), "audit", root, epic)["complete"]:
+    audit = reviews.summary(reviews.parse(path), "audit", root, epic)
+    if audit["complete"]:
         raise ScopeError("the audit is complete; there is nothing to waive")
+    if args.missing not in audit["missing_reviews"]:
+        raise ScopeError(f"{args.missing} is not a missing review; missing: {audit['missing_reviews']}")
     reviews.append(path, args.epic, [
-        f"## audit waiver · {now()}", f"- missing: {' '.join(args.missing.split())}",
+        f"## audit waiver · {now()}", f"- missing: {args.missing}",
         f"- approved_by: {' '.join(args.approver.split())}", f"- reason: {' '.join(args.reason.split())}",
         "- effect: recorded quality risk; the audit stays incomplete",
     ])

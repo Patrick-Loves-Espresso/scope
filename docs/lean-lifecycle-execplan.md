@@ -111,10 +111,16 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
   runs anyway; else accepted quality tradeoff. The runner reopens a finding on
   `still_open`/`finding_upheld`. Adjudicator: first of standard + fallback that
   raised nothing; none → executable check or the user.
-- Complete: two distinct providers completed a full round. Fresh: nothing but
-  evidence changed since the last full/verify/adjudicate round's commit
-  (refinement: within the epic folder, criteria and approvals allowed).
-  Settled: complete, fresh, every finding closed.
+- A round succeeds when every reviewer completed, was replaced by a completed
+  fallback, or (audit) was waived. Complete: two distinct providers completed
+  the last successful full round or a full round on the same content. Fresh:
+  nothing but evidence changed since the last successful full/verify/adjudicate
+  round (refinement: within the epic folder, criteria and approvals allowed).
+  Settled: complete, fresh, every finding closed. Duplicates add their raisers,
+  severity, and category; failed verification rounds (not reviewer answers)
+  count toward diagnosis; checks after a reopening only count.
+- Waiver: one per missing standard provider, only with at least one completed
+  independent review; never a pass.
 
 ### Verification rules
 
@@ -208,7 +214,10 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
   LoC vs 22 planned. Not exercised with real providers (covered by fake-provider
   tests): audit remediation, adjudication, fallback, size overrun, needs_check.
   Reviewer costs are not reported by the CLIs' text output.
-- [ ] M5 Codex review #2 and final report
+- [x] 2026-09-23 Codex review #2 (gpt-6-astra, high, read-only, whole branch):
+  13 findings; 12 accepted and fixed, F12 fixed in part (see below); 126 tests
+  pass; PR gate passes
+- [ ] M5 final report
 
 ## Decision log
 
@@ -261,6 +270,24 @@ All 17 findings were accepted; none rejected.
 
 Suggestions taken: script paths quoted in prompts; commands run with `sh -c`
 (documented). Regrowth guardrails go into `docs/scope-architecture.md` (M4).
+
+## Codex review #2 (branch) dispositions
+
+| # | Sev. | Finding | Disposition |
+|---|---|---|---|
+| F1 | blocking | A failed round advanced freshness; completeness was historical | Fixed: only successful rounds count; completeness from the last successful full round and same-content reruns |
+| F2 | major | Any waiver covered every missing review | Fixed: one waiver per missing provider, and at least one completed review |
+| F3 | major | State and verifier selection used different histories | Fixed: both use outcomes since the last reopening |
+| F4 | major | Duplicates dropped their own requirements | Fixed: duplicates add severity and category to the shared finding |
+| F5 | minor | Minors rode along only with blocking/major passes | Fixed: any mandatory check triggers the pass |
+| F6 | minor | Two reviewer answers in one round triggered diagnosis | Fixed: count failed rounds |
+| F7 | major | `--providers` could break independence | Fixed: verifier must be a raiser or the fallback; adjudicator/checker uninvolved |
+| F8 | major | Zero planned growth disabled the size trigger | Fixed: growth with no planned growth is over |
+| F9 | major | JUnit ids with `/` did not match | Fixed: normalize both sides |
+| F10 | major | Duplicate validation ids reused reports | Fixed: ids unique (plan check and runner); report path cleared before each run |
+| F11 | major | Timeout killed only the shell | Fixed: commands run in their own process group via the launcher's process runner |
+| F12 | major | `shell=True` means cmd.exe on Windows | Fixed in part: commands always run with `sh -c`. Rejected: adding a Windows CI run of the runner; Windows runner support is not in the plan and was not validated in Scope 1.x either (stated as a limitation) |
+| F13 | minor | `/decision` boundary too broad | Fixed: only ADR folders and `decisions.md` |
 
 ## Surprises and discoveries
 

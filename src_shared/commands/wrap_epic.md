@@ -44,16 +44,18 @@ If it reports blocked, stop and report why:
 - audit incomplete: retry the missing reviewer or the fallback, or wait for
   the provider. Do not offer the waiver.
 
-**Waiver, only when the user explicitly asks for it** for an incomplete audit:
+**Waiver, only when the user explicitly asks for it** for an incomplete audit,
+one per provider listed in `missing_reviews`:
 
 ```bash
-$PY "$S/scope_check.py" waive --epic $EPIC --missing "<the missing review>" \
+$PY "$S/scope_check.py" waive --epic $EPIC --missing <provider> \
   --approver "<user>" --reason "<the user's reason>"
 ```
 
-A waiver is recorded in `review.md` as a quality risk and waives only the
-named missing review: every finding must still be closed. It never turns the
-audit into a pass. Run `scope_check.py gate2` again after recording it; that
+A waiver is recorded in `review.md` as a quality risk and waives only that
+provider's missing review: at least one independent review must have
+completed, and every finding must still be closed. It never turns the audit
+into a pass. Run `scope_check.py gate2` again after recording it; that
 summary (a new commit, the audit shown as incomplete with the waiver) is what
 the user approves.
 

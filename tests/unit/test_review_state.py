@@ -56,8 +56,8 @@ def test_parse_reads_rounds_findings_outcomes_and_ignores_comments(tmp_path):
     assert list(review.findings) == ["R1.claude.1"]
     assert review.rounds[0]["commit"] == SHA
     assert [r["status"] for r in review.rounds[0]["reviewers"]] == ["completed", "unavailable"]
-    assert review.findings["R1.claude.1"].outcomes == [("claude", "verified", "note")]
-    assert reviews.completed_providers(review, "refine") == ["claude"]
+    assert review.findings["R1.claude.1"].outcomes == [("claude", "verified", "note", 2)]
+    assert [row["provider"] for row in review.rounds[0]["reviewers"] if row["status"] == "completed"] == ["claude"]
 
 
 @pytest.mark.parametrize(
@@ -107,7 +107,7 @@ def test_minors_ride_along_only_when_a_pass_runs_anyway(tmp_path):
         ("rejected", [("claude", "maintained"), ("codex", "product_scope")], "needs_user"),
         ("open", [("claude", "maintained"), ("codex", "finding_upheld")], "needs_disposition"),
         ("fixed", [("claude", "maintained"), ("codex", "finding_upheld")], "needs_verification"),
-        ("open", [("claude", "still_open"), ("claude", "still_open")], "needs_diagnosis"),
+        ("open", [("claude", "still_open"), ("claude", "still_open")], "needs_disposition"),
         ("open", [("claude", "still_open"), ("claude", "still_open"), ("codex", "diagnosis")], "needs_disposition"),
         ("open", [("claude", "still_open"), ("codex", "diagnosis"), ("claude", "still_open")], "blocked"),
         ("open", [("claude", "still_open"), ("user", "rejection_upheld")], "closed_rejected"),
@@ -212,3 +212,80 @@ def test_append_reopens_findings_and_rejects_unknown_ids(tmp_path):
 def test_waiver_lines_are_collected(tmp_path):
     review = parsed(tmp_path, round_("audit", 1, "full", "claude"), "## audit waiver · t\n- missing: codex audit\n")
     assert review.waiver == ["missing: codex audit"]
+
+
+def test_renewed_rejection_needs_every_raiser_again(tmp_path):
+    parts = [
+        round_("audit", 1, "full", "claude", "codex"),
+        finding("A1.claude.1", disposition="rejected — again"),
+        finding("A1.codex.1", disposition="duplicate of A1.claude.1"),
+        round_("audit", 2, "verify", "claude"),
+        outcome("A1.claude.1", "claude", "rejection_accepted"),
+        outcome("A1.claude.1", "codex", "maintained"),
+        round_("audit", 3, "adjudicate", "opencode"),
+        outcome("A1.claude.1", "opencode", "finding_upheld"),
+        round_("audit", 4, "verify", "codex"),
+        outcome("A1.claude.1", "codex", "rejection_accepted"),
+    ]
+    review = parsed(tmp_path, *parts)
+    assert reviews.states(review, "audit")["A1.claude.1"] == "needs_rejection_check"
+    assert reviews.pending_providers(review, "A1.claude.1", "needs_rejection_check") == {"claude"}
+
+
+def test_a_duplicate_keeps_its_own_requirements(tmp_path):
+    result = state(
+        tmp_path,
+        round_("audit", 1, "full", "claude", "codex"),
+        finding("A1.claude.1", "minor", disposition="fixed"),
+        finding("A1.codex.1", "major", "security", disposition="duplicate of A1.claude.1"),
+        workflow="audit",
+    )
+    assert result == {"A1.claude.1": "needs_verification", "A1.codex.1": "duplicate"}
+    rejected = state(
+        tmp_path,
+        round_("audit", 1, "full", "claude", "codex"),
+        finding("A1.claude.1", "minor", disposition="rejected"),
+        finding("A1.codex.1", "minor", "security", disposition="duplicate of A1.claude.1"),
+        workflow="audit",
+    )
+    assert rejected["A1.claude.1"] == "needs_rejection_check"
+
+
+def test_any_mandatory_check_makes_minors_ride_along(tmp_path):
+    result = state(
+        tmp_path,
+        round_("refine", 1, "full", "claude"),
+        finding("R1.claude.1", "minor", "security", disposition="rejected"),
+        finding("R1.claude.2", "minor", disposition="fixed"),
+        finding("R1.claude.3", "minor", disposition="rejected"),
+    )
+    assert set(result.values()) == {"needs_rejection_check", "needs_verification"}
+
+
+def test_diagnosis_counts_failed_rounds_not_reviewer_answers(tmp_path):
+    parts = [
+        round_("audit", 1, "full", "claude", "codex"),
+        finding("A1.claude.1", disposition="open"),
+        finding("A1.codex.1", disposition="duplicate of A1.claude.1"),
+        round_("audit", 2, "verify", "claude", "codex"),
+        outcome("A1.claude.1", "claude", "still_open"),
+        outcome("A1.claude.1", "codex", "still_open"),
+    ]
+    assert state(tmp_path, *parts, workflow="audit")["A1.claude.1"] == "needs_disposition"
+    again = [*parts, round_("audit", 3, "verify", "claude"), outcome("A1.claude.1", "claude", "still_open")]
+    assert state(tmp_path, *again, workflow="audit")["A1.claude.1"] == "needs_diagnosis"
+
+
+def test_fallback_rows_and_waivers_are_parsed(tmp_path):
+    review = parsed(
+        tmp_path,
+        "## audit 1 · full · t\n- commit: " + SHA + "\n"
+        "- reviewer claude · m/high · unavailable · -\n- reviewer opencode · m/high · completed · approve"
+        " · fallback for claude\n",
+        "## audit waiver · t\n- missing: codex\n- reason: down\n",
+    )
+    rows = review.rounds[0]["reviewers"]
+    assert rows[0]["decision"] is None and rows[1]["fallback_for"] == "claude"
+    assert reviews.waived(review) == {"codex"}
+    assert reviews._succeeded(review.rounds[0], set())
+    assert not reviews._succeeded({"reviewers": [rows[0]]}, set())

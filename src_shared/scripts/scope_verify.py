@@ -16,6 +16,7 @@ from pygments.token import Comment, String
 from pygments.util import ClassNotFound
 import yaml
 
+import scope_providers as providers
 import scope_review as reviews
 from scope_common import (
     ScopeError, base_commit, commit_paths, criteria_ids, emit, find_epic, git, load_policy,
@@ -84,7 +85,7 @@ def size_report(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any
     planned = sum(int(story.get("estimate_loc") or 0) for story in plan.get("stories") or []
                   if story.get("status") == "done")
     base_actual, base_planned = _accepted_baseline(epic)
-    over = planned > base_planned and actual - base_actual > limits["growth_threshold"] * (planned - base_planned)
+    over = actual - base_actual > limits["growth_threshold"] * (planned - base_planned)
     changed = git(root, "diff", "--name-only", base, "HEAD").splitlines()
     expected = [*production, *tests, "docs/"]
     return {
@@ -123,7 +124,7 @@ def criterion_status(references: list[str], cases: list[dict[str, Any]], exit_co
                             else "passed_by_exit_code" if code == 0 else "failed")
             continue
         pattern = re.compile(rf"(^|\.){re.escape(_normalize(reference))}($|\[)")
-        matched = [case["status"] for case in cases if pattern.search(case["id"])]
+        matched = [case["status"] for case in cases if pattern.search(_normalize(case["id"]))]
         statuses.append("missing" if not matched else "passed" if set(matched) == {"passed"}
                         else "skipped" if set(matched) <= {"passed", "skipped"} else "failed")
     for worst in ("failed", "missing", "skipped", "passed_by_exit_code"):
@@ -134,16 +135,17 @@ def criterion_status(references: list[str], cases: list[dict[str, Any]], exit_co
 
 def _run_command(root: Path, entry: dict[str, Any], out: Path, timeout: float) -> tuple[dict[str, Any], list, list]:
     junit = out / f"{entry['id']}.xml"
+    junit.unlink(missing_ok=True)
     row: dict[str, Any] = {"id": entry["id"], "command": entry["command"], "gap": None}
     problems: list[str] = []
-    with (out / f"{entry['id']}.log").open("wb") as log:
-        try:
-            completed = subprocess.run(entry["command"].replace("{junit}", shlex.quote(str(junit))), shell=True,
-                                       cwd=root, stdout=log, stderr=subprocess.STDOUT, timeout=timeout)
-            row["exit_code"] = completed.returncode
-        except subprocess.TimeoutExpired:
-            row["exit_code"] = None
-            problems.append(f"{entry['id']}: timed out after {timeout}s")
+    result = providers.run(["sh", "-c", entry["command"].replace("{junit}", shlex.quote(str(junit)))],
+                           provider="shell", prompt="", cwd=root, stdout_path=out / f"{entry['id']}.log",
+                           stderr_path=out / f"{entry['id']}.err.log", timeout=timeout)
+    row["exit_code"] = None if result["timed_out"] else result["exit_code"]
+    if result["timed_out"]:
+        problems.append(f"{entry['id']}: timed out after {timeout}s")
+    elif result.get("error"):
+        problems.append(f"{entry['id']}: could not start sh: {result['error']}")
     if row["exit_code"] not in (0, None):
         problems.append(f"{entry['id']}: exit code {row['exit_code']}")
     cases: list[dict[str, Any]] = []
@@ -173,6 +175,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     plan = scope_blocks(epic / "plan.md")
     if not plan.get("validation"):
         raise ScopeError("plan.md declares no validation commands")
+    ids = [entry["id"] for entry in plan["validation"]]
+    if len(ids) != len(set(ids)):
+        raise ScopeError(f"validation ids must be unique: {ids}")
     tested, out = git(root, "rev-parse", "HEAD"), run_dir(root, args.epic, f"verify-{args.milestone}")
     rows, cases, problems = [], [], []
     for entry in plan["validation"]:

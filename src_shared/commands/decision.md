@@ -198,8 +198,8 @@ Saved {ADR|PDR}-{NNN}: {Title}
 ```python
 # Use the most recent committed decision artifact as the discovery boundary.
 last_decision = Bash(
-    "git log -1 --format='%aI' -- docs/architecture/ "
-    "docs/product/decisions.md"
+    "git log -1 --format='%aI' -- docs/architecture/adr/ docs/architecture/backend/adr/ "
+    "docs/architecture/frontend/adr/ docs/product/decisions.md"
 ).strip()
 
 if last_decision:

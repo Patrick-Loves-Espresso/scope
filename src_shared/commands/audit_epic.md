@@ -83,7 +83,7 @@ Act on the first that applies, then check status again:
 - `needs_verification` or `needs_rejection_check`:
   `review --workflow audit --mission verify`.
 - `needs_adjudication`: `review --workflow audit --mission adjudicate`.
-- Nothing pending but `complete: false`: rerun the missing reviewer with
+- Nothing pending but `complete: false`: rerun each provider in `missing_reviews` with
   `--mission full --providers <name>`, or wait for the provider.
 - Nothing pending but `fresh: false`: the branch changed after the last review
   round; run `scope_verify.py run --milestone remediation`, then the full

@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 from typing import Any
 
-from scope_common import ScopeError, commit_paths, emit, find_epic, git, now, repo_root, run_cli
+from scope_common import ScopeError, commit_paths, emit, find_epic, git, load_policy, now, repo_root, run_cli
 
 SEVERITIES = ("blocking", "major", "minor")
 MAJOR = {"blocking", "major"}
@@ -28,7 +28,7 @@ CLOSED = {"closed", "closed_unverified", "closed_rejected", "accepted_tradeoff",
 PREFIX = {"refine": "R", "audit": "A"}
 
 ROUND = re.compile(r"^## (refine|implement|audit) (\d+) · (\w+) · (\S+)$")
-REVIEWER = re.compile(r"^- reviewer (\S+) · (\S+) · (\w+)(?: · (\w+))?")
+REVIEWER = re.compile(r"^- reviewer (\S+) · (\S+) · (\w+) · (\S+)(?: · fallback for (\w+))?")
 COMMIT = re.compile(r"^- commit: ([0-9a-f]{40})$")
 SIZE = re.compile(r"^- size: actual=(\d+) planned=(\d+)")
 FINDING = re.compile(r"^### ([RA]\d+\.[a-z]+\.\d+) · (\w+) · (\w+)\s*$")
@@ -52,7 +52,7 @@ class Finding:
     disposition: str = "open"
     duplicate_of: str | None = None
     lines: list[str] = field(default_factory=list)
-    outcomes: list[tuple[str, str, str]] = field(default_factory=list)
+    outcomes: list[tuple[str, str, str, int]] = field(default_factory=list)  # (by, outcome, note, round)
 
     @property
     def raised_by(self) -> str:
@@ -83,8 +83,9 @@ def parse(path: Path) -> Review:
         if in_waiver and line.startswith("- "):
             waiver.append(line[2:])
         if rounds and current is None and (match := REVIEWER.match(line)):
-            rounds[-1]["reviewers"].append(
-                {"provider": match[1], "model": match[2], "status": match[3], "decision": match[4]})
+            rounds[-1]["reviewers"].append({"provider": match[1], "model": match[2], "status": match[3],
+                                            "decision": None if match[4] == "-" else match[4],
+                                            "fallback_for": match[5]})
         elif rounds and current is None and (match := COMMIT.match(line)):
             rounds[-1]["commit"] = match[1]
         elif rounds and current is None and (match := SIZE.match(line)):
@@ -95,7 +96,8 @@ def parse(path: Path) -> Review:
             current = None
         elif match := OUTCOME.match(line):
             if match[1] in findings:
-                findings[match[1]].outcomes.append((match[2], match[3], match[4]))
+                number = rounds[-1]["number"] if rounds else 0
+                findings[match[1]].outcomes.append((match[2], match[3], match[4], number))
         elif current is not None:
             current.lines.append(line)
             if match := DISPOSITION.match(line):
@@ -111,8 +113,20 @@ def raisers(review: Review, finding_id: str) -> set[str]:
     }
 
 
-def _latest(events: list[tuple[str, str, str]], kinds: set[str]) -> dict[str, str]:
-    return {by: outcome for by, outcome, _ in events if outcome in kinds}
+def _latest(events: list[tuple], kinds: set[str]) -> dict[str, str]:
+    return {event[0]: event[1] for event in events if event[1] in kinds}
+
+
+def _since_reopen(events: list[tuple]) -> list[tuple]:
+    """Outcomes after the finding was last reopened; earlier checks concern an earlier fix or rejection."""
+    reopened = max((i for i, event in enumerate(events) if event[1] in REOPENING), default=-1)
+    return events[reopened + 1:]
+
+
+def _requirements(review: Review, finding: Finding) -> tuple[str, set[str]]:
+    """Severity and categories a finding must satisfy, including those of its duplicates."""
+    group = [finding, *(f for f in review.findings.values() if f.duplicate_of == finding.id)]
+    return next(s for s in SEVERITIES if any(f.severity == s for f in group)), {f.category for f in group}
 
 
 def _state(review: Review, finding: Finding, pass_needed: bool) -> str:
@@ -120,42 +134,40 @@ def _state(review: Review, finding: Finding, pass_needed: bool) -> str:
         target = review.findings.get(finding.duplicate_of or "")
         return "duplicate" if target and target.disposition != "duplicate" else "needs_disposition"
     events, raised = finding.outcomes, raisers(review, finding.id)
-    kinds = [outcome for _, outcome, _ in events]
-    reopened = max((i for i, outcome in enumerate(kinds) if outcome in REOPENING), default=-1)
-    decisive = [(by, outcome) for by, outcome, _ in events[reopened + 1:] if outcome in ADJUDICATION_OUTCOMES]
+    severity, categories = _requirements(review, finding)
+    kinds, recent = [event[1] for event in events], _since_reopen(events)
+    decisive = [(event[0], event[1]) for event in recent if event[1] in ADJUDICATION_OUTCOMES]
     if decisive and decisive[-1] == ("user", "rejection_upheld"):
         return "closed_rejected"
-    user_decided = any(by == "user" for by, _, _ in events)
+    user_decided = any(event[0] == "user" for event in events)
     disputed = bool(decisive) and decisive[-1][1] == "product_scope"
-    if (finding.category == "product_decision" and not user_decided) or disputed:
+    if ("product_decision" in categories and not user_decided) or disputed:
         return "needs_user"
     if finding.disposition == "open":
-        diagnosed = max((i for i, outcome in enumerate(kinds) if outcome == "diagnosis"), default=-1)
+        diagnosed = max((i for i, kind in enumerate(kinds) if kind == "diagnosis"), default=-1)
         if diagnosed >= 0 and "still_open" in kinds[diagnosed:]:
             return "blocked"
-        return "needs_diagnosis" if diagnosed < 0 and kinds.count("still_open") >= 2 else "needs_disposition"
+        failed_rounds = {event[3] for event in events if event[1] == "still_open"}
+        return "needs_diagnosis" if diagnosed < 0 and len(failed_rounds) >= 2 else "needs_disposition"
     if finding.disposition == "fixed":
-        latest = _latest(events, FIX_OUTCOMES)
+        latest = _latest(recent, FIX_OUTCOMES)
         if all(latest.get(provider) == "verified" for provider in raised):
             return "closed"
-        return "needs_verification" if finding.severity in MAJOR or kinds or pass_needed else "closed_unverified"
+        return "needs_verification" if severity in MAJOR or kinds or pass_needed else "closed_unverified"
     if decisive and decisive[-1][1] == "rejection_upheld":
         return "closed_rejected"
-    latest = _latest(events[reopened + 1:], REJECTION_OUTCOMES)
+    latest = _latest(recent, REJECTION_OUTCOMES)
     if any(outcome == "maintained" for outcome in latest.values()):
         return "needs_adjudication"
     if all(latest.get(provider) == "rejection_accepted" for provider in raised):
         return "closed_rejected"
-    checked = finding.severity in MAJOR or finding.category in SENSITIVE or finding.disposition == "disproportionate"
+    checked = severity in MAJOR or bool(categories & SENSITIVE) or finding.disposition == "disproportionate"
     return "needs_rejection_check" if checked or kinds or pass_needed else "accepted_tradeoff"
 
 
 def states(review: Review, workflow: str) -> dict[str, str]:
     scoped = [f for key, f in review.findings.items() if key.startswith(PREFIX[workflow])]
-    pass_needed = any(
-        f.severity in MAJOR and _state(review, f, False) in ("needs_verification", "needs_rejection_check")
-        for f in scoped
-    )
+    pass_needed = any(_state(review, f, False) in ("needs_verification", "needs_rejection_check") for f in scoped)
     return {f.id: _state(review, f, pass_needed) for f in scoped}
 
 
@@ -163,29 +175,51 @@ def pending_providers(review: Review, finding_id: str, state: str) -> set[str]:
     """Raising providers that still have to verify a fix or check a rejection."""
     fixed = state == "needs_verification"
     closing, kinds = ("verified", FIX_OUTCOMES) if fixed else ("rejection_accepted", REJECTION_OUTCOMES)
-    latest = _latest(review.findings[finding_id].outcomes, kinds)
+    latest = _latest(_since_reopen(review.findings[finding_id].outcomes), kinds)
     return {provider for provider in raisers(review, finding_id) if latest.get(provider) != closing}
 
 
-def completed_providers(review: Review, workflow: str) -> list[str]:
-    return sorted({
-        reviewer["provider"] for entry in review.rounds
-        if entry["workflow"] == workflow and entry["mission"] == "full"
-        for reviewer in entry["reviewers"] if reviewer["status"] == "completed"
-    })
+def waived(review: Review) -> set[str]:
+    """Providers whose missing audit review the user explicitly waived."""
+    return {line.split(":", 1)[1].strip() for line in review.waiver if line.startswith("missing:")}
 
 
-def fresh(review: Review, workflow: str, root: Path, epic: Path) -> bool:
-    """No change since the last reviewing round except evidence (and, in refinement, the approved criteria)."""
-    reviewed = [entry["commit"] for entry in review.rounds
-                if entry["workflow"] == workflow and entry["mission"] in REVIEWING and entry["commit"]]
-    if not reviewed:
-        return False
+def _succeeded(entry: dict[str, Any], waived_providers: set[str]) -> bool:
+    """Every reviewer in the round completed, was replaced by a completed fallback, or was waived."""
+    rows = entry["reviewers"]
+    covered = waived_providers | {row["fallback_for"] for row in rows if row["status"] == "completed"}
+    return any(row["status"] == "completed" for row in rows) and all(
+        row["status"] == "completed" or row["provider"] in covered for row in rows)
+
+
+def _unchanged(root: Path, epic: Path, workflow: str, base: str, head: str = "HEAD") -> bool:
+    """Nothing but evidence changed from base to head (for HEAD, the working tree too); refinement looks
+    only at the epic folder and also allows the approved criteria and their record."""
     scope = ["--", str(epic.relative_to(root))] if workflow == "refine" else []
-    changed = set(git(root, "diff", "--name-only", reviewed[-1], "HEAD", *scope).splitlines())
-    changed |= {line[3:] for line in git(root, "status", "--porcelain", *scope).splitlines()}
+    changed = set(git(root, "diff", "--name-only", base, head, *scope).splitlines())
+    if head == "HEAD":
+        changed |= {line[3:] for line in git(root, "status", "--porcelain", *scope).splitlines()}
     allowed = EVIDENCE | ({"acceptance-criteria.md", "approvals.yaml"} if workflow == "refine" else set())
     return all(Path(path).name in allowed and path.startswith("docs/epics/") for path in changed)
+
+
+def coverage(review: Review, workflow: str, root: Path, epic: Path, standard: list[str]) -> dict[str, Any]:
+    """Which providers reviewed the current state: the last successful full round and the full rounds on
+    the same content; fresh when nothing but evidence changed since the last successful reviewing round."""
+    rounds = [entry for entry in review.rounds if entry["workflow"] == workflow and entry["commit"]]
+    skip = waived(review) if workflow == "audit" else set()
+    good = [entry for entry in rounds if entry["mission"] in REVIEWING and _succeeded(entry, skip)]
+    fulls = [entry for entry in rounds if entry["mission"] == "full"]
+    last = next((entry for entry in reversed(fulls) if _succeeded(entry, skip)), None)
+    same = [entry for entry in fulls if last and _unchanged(root, epic, workflow, entry["commit"], last["commit"])]
+    completed = {row["provider"] for entry in same for row in entry["reviewers"] if row["status"] == "completed"}
+    replaced = {row["fallback_for"] for entry in same for row in entry["reviewers"] if row["status"] == "completed"}
+    return {
+        "providers_completed": sorted(completed),
+        "missing_reviews": [provider for provider in standard if provider not in completed | replaced],
+        "complete": len(completed) >= 2,
+        "fresh": bool(good) and _unchanged(root, epic, workflow, good[-1]["commit"]),
+    }
 
 
 def summary(review: Review, workflow: str, root: Path, epic: Path) -> dict[str, Any]:
@@ -194,15 +228,12 @@ def summary(review: Review, workflow: str, root: Path, epic: Path) -> dict[str, 
     for key, state in finding_states.items():
         if state not in CLOSED:
             pending.setdefault(state, []).append(key)
-    complete = len(completed_providers(review, workflow)) >= 2
-    is_fresh = fresh(review, workflow, root, epic)
+    reviewed = coverage(review, workflow, root, epic, load_policy()["standard_reviewers"])
     return {
         "workflow": workflow,
-        "complete": complete,
-        "providers_completed": completed_providers(review, workflow),
-        "fresh": is_fresh,
+        **reviewed,
         "findings_closed": not pending,
-        "settled": complete and is_fresh and not pending,
+        "settled": reviewed["complete"] and reviewed["fresh"] and not pending,
         "pending": pending,
         "findings": {
             key: {"severity": review.findings[key].severity, "category": review.findings[key].category,
@@ -210,6 +241,7 @@ def summary(review: Review, workflow: str, root: Path, epic: Path) -> dict[str, 
             for key, state in finding_states.items()
         },
         "waiver": review.waiver,
+        "waived": sorted(waived(review)),
     }
 
 
@@ -219,7 +251,7 @@ def next_round(review: Review, workflow: str) -> int:
 
 def finding_block(review: Review, finding_id: str) -> str:
     finding = review.findings[finding_id]
-    history = [f"- {finding_id} · {by}: {outcome} — {note}" for by, outcome, note in finding.outcomes]
+    history = [f"- {finding_id} · {event[0]}: {event[1]} — {event[2]}" for event in finding.outcomes]
     header = f"### {finding.id} · {finding.severity} · {finding.category}"
     return "\n".join([header, *finding.lines, *history]).rstrip()
 

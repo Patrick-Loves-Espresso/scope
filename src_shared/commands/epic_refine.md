@@ -116,7 +116,7 @@ Act on the first that applies, then check status again:
 - `needs_verification` or `needs_rejection_check`:
   `review --workflow refine --mission verify`.
 - `needs_adjudication`: `review --workflow refine --mission adjudicate`.
-- Nothing pending but `complete: false`: rerun the missing reviewer with
+- Nothing pending but `complete: false`: rerun each provider in `missing_reviews` with
   `--mission full --providers <name>`.
 - Nothing pending but `fresh: false`: the plan changed after the last review
   round; run the full review again.

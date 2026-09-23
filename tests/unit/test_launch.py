@@ -403,3 +403,16 @@ def test_codex_reviewers_get_the_codegraph_index_when_it_exists(planned, fake):
     codex = next(c["args"] for c in calls(fake) if c["provider"] == "codex")
     claude = next(c["args"] for c in calls(fake) if c["provider"] == "claude")
     assert codex[codex.index("--add-dir") + 1] == str(planned / ".codegraph") and "--add-dir" not in claude
+
+
+def test_explicit_providers_cannot_break_independence(planned, fake, monkeypatch):
+    review(planned, "refine", "full")
+    monkeypatch.setenv("FAKE_DISPOSITION", "rejected — out of scope")
+    work(planned, task="Resolve the open findings in review.md.")
+    assert "may not verify" in review(planned, "refine", "verify", "--providers", "agy", expect=1)["error"]
+    monkeypatch.setenv("FAKE_VERIFY_OUTCOME", "maintained")
+    review(planned, "refine", "verify")
+    assert "may not adjudicate" in review(planned, "refine", "adjudicate", "--providers", "claude", expect=1)["error"]
+    assert review(planned, "refine", "adjudicate", "--providers", "opencode")["reviewers"][0]["provider"] == "opencode"
+    blocked = review(planned, "implement", "check", "--context", "x", "--providers", "claude", expect=1)
+    assert "other than the author" in blocked["error"]

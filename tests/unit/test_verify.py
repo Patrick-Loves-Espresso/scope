@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import psutil
 import yaml
 
 from conftest import EPIC, EPIC_DIR, git, scope
@@ -64,6 +65,9 @@ def test_junit_cases_and_criterion_matching(tmp_path):
     assert status(["command:lint"], {"lint": 0}) == "passed_by_exit_code"
     assert status(["command:lint"], {"lint": 2}) == "failed"
     assert status(["command:other"], {"lint": 0}) == "missing"
+    go = tmp_path / "go.xml"
+    go.write_text('<testsuite><testcase classname="example.com/p" name="TestGreet"/></testsuite>')
+    assert scope_verify.criterion_status(["example.com/p.TestGreet"], scope_verify.junit_cases(go), {}) == "passed"
 
 
 def test_final_run_records_counts_and_commits_the_record(planned, fake):
@@ -134,9 +138,31 @@ def test_run_needs_validation_commands(planned, fake):
     assert "declares no validation" in run(planned, expect=1)["error"]
 
 
-def test_commands_time_out(tmp_path):
-    row, _, problems = scope_verify._run_command(tmp_path, {"id": "slow", "command": "sleep 5"}, tmp_path, timeout=0.5)
+def test_commands_time_out_and_their_children_are_stopped(tmp_path):
+    command = f"sleep 30 & echo $! > {tmp_path}/child.pid; wait"
+    row, _, problems = scope_verify._run_command(tmp_path, {"id": "slow", "command": command}, tmp_path, timeout=0.5)
     assert row["exit_code"] is None and problems == ["slow: timed out after 0.5s"]
+    assert (
+        not psutil.pid_exists(int((tmp_path / "child.pid").read_text()))
+        or psutil.Process(int((tmp_path / "child.pid").read_text())).status() == psutil.STATUS_ZOMBIE
+    )
+
+
+def test_a_stale_report_is_never_reused(tmp_path):
+    writer = {
+        "id": "unit",
+        "command": 'printf \'<testsuite><testcase classname="t" name="ok"/></testsuite>\' > {junit}',
+    }
+    assert scope_verify._run_command(tmp_path, writer, tmp_path, timeout=10)[2] == []
+    silent = {"id": "unit", "command": "true # {junit}"}
+    assert "JUnit output missing" in scope_verify._run_command(tmp_path, silent, tmp_path, timeout=10)[2][0]
+
+
+def test_duplicate_validation_ids_are_refused_by_the_runner(planned, fake):
+    set_plan(planned, "  - id: lint\n", "  - id: unit\n")
+    git(planned, "add", "-A")
+    git(planned, "commit", "-q", "-m", "plan: duplicate ids")
+    assert "validation ids must be unique" in run(planned, expect=1)["error"]
 
 
 def worktree_with_code(planned: Path, source: str) -> Path:
@@ -182,14 +208,16 @@ def test_accepted_growth_rebaselines_the_size_check(planned, fake):
         cwd=worktree,
     )
     assert scope("scope_verify.py", "size", "--epic", EPIC, cwd=worktree)["accepted_baseline"] == [20, 6]
+    greet = worktree / "src" / "greet.py"
+    greet.write_text(greet.read_text() + "\n\ndef g():\n    return 1\n")
+    git(worktree, "commit", "-q", "-am", "code without a finished story")
+    assert scope("scope_verify.py", "size", "--epic", EPIC, cwd=worktree)["over"]
     set_plan(worktree, "criteria: [AC-002], status: todo", "criteria: [AC-002], status: done")
-    (worktree / "src" / "greet.py").write_text(
-        (worktree / "src" / "greet.py").read_text() + "\n\ndef g():\n    return 1\n"
-    )
+    greet.write_text(greet.read_text() + "\n\ndef h():\n    return 2\n")
     git(worktree, "add", "-A")
     git(worktree, "commit", "-q", "-m", "S2 done")
     size = scope("scope_verify.py", "size", "--epic", EPIC, cwd=worktree)
-    assert (size["actual_loc"], size["planned_loc"], size["over"]) == (22, 12, False)
+    assert (size["actual_loc"], size["planned_loc"], size["over"]) == (24, 12, False)
 
 
 def test_module_limits_are_reported(planned, fake, monkeypatch):
@@ -208,3 +236,9 @@ def test_module_limits_are_reported(planned, fake, monkeypatch):
 
 def test_coverage_without_runs(planned):
     assert scope_verify.coverage(planned, planned / EPIC_DIR)["reason"] == "no verification run recorded"
+
+
+def test_a_missing_shell_is_a_problem(tmp_path, monkeypatch):
+    monkeypatch.setenv("PATH", str(tmp_path))
+    row, _, problems = scope_verify._run_command(tmp_path, {"id": "x", "command": "true"}, tmp_path, timeout=5)
+    assert row["exit_code"] is None and problems[0].startswith("x: could not start sh")

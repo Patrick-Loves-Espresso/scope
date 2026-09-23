@@ -127,6 +127,8 @@ def _assignments(args: argparse.Namespace, review: reviews.Review, policy: dict[
         if args.mission == "diagnose" and args.finding not in review.findings:
             raise ScopeError("--finding must name an existing finding for a diagnosis")
         independent = [provider for provider in standard if provider != args.host] or [fallback]
+        if explicit and explicit[0] == args.host:
+            raise ScopeError(f"a {args.mission} must come from a provider other than the author ({args.host})")
         findings = {args.finding: {"diagnosis"}} if args.mission == "diagnose" else {}
         return [{"provider": (explicit or independent)[0], "findings": findings}]
     grouped: dict[str, dict[str, set[str]]] = {}
@@ -143,6 +145,9 @@ def _assignments(args: argparse.Namespace, review: reviews.Review, policy: dict[
             allowed, chosen = reviews.ADJUDICATION_OUTCOMES, {uninvolved[0]}
         else:
             continue
+        eligible = reviews.raisers(review, finding_id) | {fallback} if args.mission == "verify" else set(uninvolved)
+        if explicit and explicit[0] not in eligible:
+            raise ScopeError(f"{explicit[0]} may not {args.mission} {finding_id}; eligible: {sorted(eligible)}")
         for provider in ([explicit[0]] if explicit else sorted(chosen)):
             grouped.setdefault(provider, {})[finding_id] = allowed
     if not grouped:

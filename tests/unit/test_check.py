@@ -84,6 +84,7 @@ def test_changed_criteria_need_renewed_approval_with_diff_and_delta(project):
         ("criteria: [AC-002]", "criteria: [AC-002, AC-009]", "unknown criterion AC-009"),
         ("  - id: lint\n    type: check", "  - id: lint\n    type: vibe", "validation lint: needs id"),
         ("validation:", "checks:", "validation: no commands declared"),
+        ("  - id: lint\n", "  - id: unit\n", "duplicate validation id unit"),
         ('  AC-002: ["tests/test_greet.py::test_rejects_empty_name", "command:lint"]\n', "", "AC-002: no tests mapped"),
         ('"command:lint"', '"command:typo"', "unknown validation command"),
         ("docs:\n  - {target", "documents:\n  - {target", "docs: declare"),
@@ -161,57 +162,72 @@ def test_merge_refuses_when_gate2_fails(audited):
     assert "Gate 2 checks fail" in check(audited, "merge", "--commit", head, "--approver", "u", expect=1)["error"]
 
 
-def test_waiver_only_for_an_incomplete_audit_and_never_a_pass(project, fake, monkeypatch):
+def audit_review(worktree: Path, *extra: str) -> dict:
+    return scope(
+        "scope_launch.py",
+        "review",
+        "--host",
+        "claude",
+        "--workflow",
+        "audit",
+        "--mission",
+        "full",
+        "--epic",
+        EPIC,
+        *extra,
+        cwd=worktree,
+    )
+
+
+def test_waiver_names_each_missing_review_and_is_never_a_pass(project, fake, monkeypatch):
     refine(project)
     worktree = implement(project)
     monkeypatch.setenv("FAKE_UNAVAILABLE", "claude,codex")
     monkeypatch.setenv("FAKE_AUDIT_FINDER", "nobody")
-    scope(
-        "scope_launch.py",
-        "review",
-        "--host",
-        "claude",
-        "--workflow",
-        "audit",
-        "--mission",
-        "full",
-        "--epic",
-        EPIC,
-        cwd=worktree,
-    )
+    audit_review(worktree)
     assert "audit incomplete" in " ".join(check(worktree, "gate2", expect=1)["problems"])
-    check(
-        worktree,
-        "waive",
-        "--missing",
-        "second independent audit review",
-        "--approver",
-        "Test user",
-        "--reason",
-        "providers down before release",
-    )
+    wrong = check(worktree, "waive", "--missing", "gemini", "--approver", "u", "--reason", "r", expect=1)
+    assert "not a missing review" in wrong["error"]
+    check(worktree, "waive", "--missing", "codex", "--approver", "Test user", "--reason", "providers down")
     gate = check(worktree, "gate2")
-    assert gate["ready"] and "Verdict: INCOMPLETE (waived: missing: second independent audit review" in gate["summary"]
+    assert gate["ready"] and "Verdict: INCOMPLETE (waiver: missing: codex" in gate["summary"]
     monkeypatch.setenv("FAKE_UNAVAILABLE", "")
-    scope(
-        "scope_launch.py",
-        "review",
-        "--host",
-        "claude",
-        "--workflow",
-        "audit",
-        "--mission",
-        "full",
-        "--epic",
-        EPIC,
-        "--providers",
-        "claude",
-        cwd=worktree,
-    )
+    audit_review(worktree, "--providers", "codex")
     assert (
         "nothing to waive"
-        in check(worktree, "waive", "--missing", "x", "--approver", "u", "--reason", "r", expect=1)["error"]
+        in check(worktree, "waive", "--missing", "codex", "--approver", "u", "--reason", "r", expect=1)["error"]
     )
+
+
+def test_one_waiver_does_not_cover_an_audit_with_no_completed_review(project, fake, monkeypatch):
+    refine(project)
+    worktree = implement(project)
+    monkeypatch.setenv("FAKE_UNAVAILABLE", "claude,codex,opencode")
+    audit_review(worktree)
+    check(worktree, "waive", "--missing", "codex", "--approver", "u", "--reason", "r")
+    problems = " ".join(check(worktree, "gate2", expect=1)["problems"])
+    assert "audit incomplete: completed [], missing ['claude']" in problems
+
+
+def test_a_failed_review_of_new_code_does_not_make_the_audit_fresh(audited, fake, monkeypatch):
+    (audited / "src" / "extra.py").write_text("x = 1\n")
+    git(audited, "add", "-A")
+    git(audited, "commit", "-q", "-m", "unreviewed")
+    scope("scope_verify.py", "run", "--epic", EPIC, "--milestone", "remediation", cwd=audited)
+    monkeypatch.setenv("FAKE_FAIL", "claude,codex,opencode")
+    audit_review(audited)
+    status = scope("scope_review.py", "status", "--epic", EPIC, "--workflow", "audit", cwd=audited)
+    assert status["complete"] and not status["fresh"] and not status["settled"]
+    assert "changed after the last audit review" in " ".join(check(audited, "gate2", expect=1)["problems"])
+
+
+def test_a_partial_rerun_on_new_code_is_not_complete(audited, fake):
+    (audited / "src" / "extra.py").write_text("x = 1\n")
+    git(audited, "add", "-A")
+    git(audited, "commit", "-q", "-m", "unreviewed")
+    status = audit_review(audited, "--providers", "claude")["summary"]
+    assert status["providers_completed"] == ["claude"] and status["missing_reviews"] == ["codex"]
+    assert not status["complete"]
 
 
 def test_gate2_blocks_while_audit_findings_are_open(project, fake):

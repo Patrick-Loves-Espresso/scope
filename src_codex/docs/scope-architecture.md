@@ -191,8 +191,9 @@ approves that exact SHA, `scope_check.py merge` re-checks, refuses if the
 branch moved, merges the commit into the base branch with `--no-ff` and the
 trailers `Scope-Approved-Commit`, `Scope-Approved-By`, and `Scope-Approved-On`,
 and removes the worktree. The approved branch is never modified. Only an
-explicit user request records a waiver for an incomplete audit; it is a quality
-risk, never a pass.
+explicit user request records a waiver for an incomplete audit, one per
+missing provider review, and only when at least one independent review
+completed; it is a quality risk, never a pass.
 
 ---
 
@@ -267,18 +268,25 @@ reviewers. Suggestions are optional and untracked.
   fresh author; a failure after the diagnosis goes to the user only for a
   product choice, an accepted risk, or more resources, and otherwise blocks
   the epic. No finding is accepted because a budget ran out.
-- **Complete, fresh, settled.** A review is complete when two distinct
-  providers completed a full round, fresh when nothing but evidence changed
-  since the last reviewing round's commit, and settled when it is complete,
-  fresh, and every finding is closed.
+- **Complete, fresh, settled.** A round succeeds when every reviewer in it
+  completed or was replaced by a completed fallback; failed rounds count for
+  nothing. A review is complete when two distinct providers completed the last
+  successful full round or a full round on the same content (a rerun of a
+  missing reviewer), fresh when nothing but evidence changed since the last
+  successful reviewing round, and settled when it is complete, fresh, and every
+  finding is closed. A finding's duplicates add their raisers, severity, and
+  category to it; two failed verification rounds, not two reviewer answers,
+  trigger a diagnosis. An explicit `--providers` choice cannot break these
+  rules: a verifier must have raised the finding (or be the fallback), and an
+  adjudicator or checker must be uninvolved.
 
 ---
 
 ## 8. Verification Rules
 
 `scope_verify.py run` requires a clean, committed state. It runs each
-validation command of the plan with `sh -c`, replacing `{junit}` with a log
-path, and reads the JUnit XML that standard reporters write (pytest
+validation command of the plan with a POSIX `sh -c` in its own process group
+(a timeout stops the whole group), replacing `{junit}` with a fresh log path, and reads the JUnit XML that standard reporters write (pytest
 `--junitxml`, `gotestsum --junitfile`, a Jest JUnit reporter). A run fails on
 a non-zero exit, a missing JUnit file, a failure or error in the XML, or a skip
 without a reason. Each criterion's mapped tests must have run and passed;
