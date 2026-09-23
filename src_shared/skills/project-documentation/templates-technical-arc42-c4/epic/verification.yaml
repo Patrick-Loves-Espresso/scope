@@ -1,0 +1,23 @@
+# Verification record. Written only by `scope_verify.py run`, which executes
+# the plan's validation commands on a committed state and appends one run per
+# milestone. A later commit is still covered when it changes only
+# verification.yaml or review.md; any other change needs a new run. Raw logs
+# stay in the git-ignored directory named by `logs`.
+runs:
+  - milestone: M1
+    tested_commit: "<full commit sha>"
+    at: "<ISO timestamp>"
+    outcome: passed            # passed | failed
+    logs: tmp_debug/scope-runs/<epic>/verify/<timestamp>
+    commands:
+      - id: unit
+        command: "python -m pytest tests/unit --junitxml={junit}"
+        exit_code: 0
+        counts: {tests: 0, passed: 0, failed: 0, errors: 0, skipped: 0}
+        skips: []              # {test, reason}
+        gap: null              # why counts are missing, when they are
+    acceptance:                # every criterion's mapped tests ran and passed
+      AC-001: passed           # passed | failed | skipped | missing
+    size: {actual_loc: 0, planned_loc: 0, ratio: null}
+    unavailable_evidence: []   # {id, reason}, copied from the plan
+    problems: []               # why the outcome is failed

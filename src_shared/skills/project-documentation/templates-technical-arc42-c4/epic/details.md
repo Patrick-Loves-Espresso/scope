@@ -55,6 +55,5 @@ status: draft
 - Related epics:
 - Existing system documentation:
 
-Observable product behavior belongs in `acceptance-criteria.md`. Repository
-evidence, decisions, architecture, failure behavior, and proof strategy belong
-in `design.md`.
+Observable product behavior belongs in `acceptance-criteria.md`. The approach,
+stories, validation, and documentation obligations belong in `plan.md`.

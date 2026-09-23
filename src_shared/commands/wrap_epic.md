@@ -1,127 +1,99 @@
 ---
 name: wrap_epic
-description: Finalize one delivery-complete epic through a sealed, approved, exact commit and merge.
+description: Gate 2 - show the exact branch commit for approval, then merge exactly that commit into the base branch.
 args: "{epic-id}"
 ---
 
 # wrap_epic
 
-Invocation is `scope:wrap_epic {epic-id}` in Codex and `/wrap_epic {epic-id}`
-in Claude.
+You close an audited epic. You do not implement, review, or edit anything.
+The user approves one exact commit; Scope merges exactly that commit and
+records the approval in the merge commit.
 
-This command only closes an already completed delivery. It does not implement,
-audit, remediate, rewrite documentation, generate summaries, discover decisions
-or lessons, or infer which dirty files belong to the epic. The deterministic
-finalizer owns archival, exact staging, commit, merge, recovery, and the
-post-merge CodeGraph refresh.
+## Setup
 
-## Resolve the sealed delivery
-
-Resolve exactly one repository root, epic worktree, active epic directory, and
-Scope installation. Reject an empty or ambiguous epic/worktree match, a foreign
-branch, or roots that do not describe the same Git repository.
+Run in the epic's worktree.
 
 ```bash
-EPIC_ID="{epic-id}"
-REPOSITORY_ROOT="<main repository root>"
-WORKING_ROOT="<epic worktree root>"
-EPIC_DIR="<active epic directory in the worktree>"
-IMPLEMENT_RUN="${REPOSITORY_ROOT}/tmp_debug/scope-runs/${EPIC_ID}/implement/run.yaml"
-
-# Codex:
-SCOPE_ROOT="${REPOSITORY_ROOT}/plugins/scope"
-# Claude instead uses:
-# SCOPE_ROOT="${REPOSITORY_ROOT}/.claude"
-
-FINALIZER="${SCOPE_ROOT}/scripts/scope-wrap-finalize.py"
-WRAP_POLICY="${SCOPE_ROOT}/config/wrap-policy.yaml"
-AUDIT_POLICY="${SCOPE_ROOT}/config/audit-policy.yaml"
-CODEGRAPH_POLICY="${SCOPE_ROOT}/config/codegraph-policy.yaml"
+EPIC="{epic-id}"
+WT="$(git rev-parse --show-toplevel)"              # wip/<epic>, branch epic/<epic>
+ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd -P)"
+HOST=claude; SCOPE_ROOT="$ROOT/.claude"            # Claude Code
+# HOST=codex; SCOPE_ROOT="$ROOT/plugins/scope"     # Codex
+S="$SCOPE_ROOT/scripts"; PY=python3
 ```
 
-Require the finalizer and policies. Use one Python interpreter throughout.
-
-`implement` is the sole owner of the durable `seal` operation and creates it
-immediately after the delivery summary. Never reconstruct or create a seal in
-this command. A missing seal means delivery is incomplete: return read-only
-`NOT_READY` and instruct the user to resume `scope:implement {epic-id}` in
-Codex or `/implement {epic-id}` in Claude so it can finish delivery and retry
-its crash-idempotent seal operation.
-
-## Verify readiness
-
-Verification is read-only and survives deletion of `tmp_debug`:
+## 1. Check
 
 ```bash
-"$PYTHON_CMD" "$FINALIZER" verify "$EPIC_DIR" \
-  --repo-root "$WORKING_ROOT" --policy "$WRAP_POLICY" \
-  --audit-policy "$AUDIT_POLICY"
+$PY "$S/scope_check.py" gate2 --epic $EPIC
 ```
 
-Proceed only for `status: verified`. This requires the current approved handoff,
-delivery evidence and summary, terminal audit PASS, current seal, exact sealed
-delta, clean ownership state, and every manifest documentation obligation
-implemented before audit.
+It confirms that the acceptance criteria still match the approved hash, that
+the audit is complete, settled, and still covers the branch (nothing but
+evidence changed since the last audit round), and that `verification.yaml`
+covers the branch head (only `verification.yaml` or `review.md` changed since
+the tested commit). It prints the Gate 2 summary.
 
-On any readiness failure, return `NOT_READY` with the finalizer's exact errors.
-Do not archive, stage, commit, merge, update tracking, or synchronize CodeGraph.
-Recommend resuming `implement` when repair is possible. If the user wants to
-abandon the epic, return `ABANDONMENT_DEFERRED`; abandonment has no automated
-mutation path in this command.
+If it reports blocked, stop and report why:
 
-## Prepare exact closure
+- criteria changed: renewed approval ("Renewing Gate 1 on the branch" in
+  `/implement`);
+- verification missing or stale: `/implement` step 2;
+- audit open or failed: `/audit_epic`;
+- audit incomplete: retry the missing reviewer or the fallback, or wait for
+  the provider. Do not offer the waiver.
 
-Prepare only after verification:
+**Waiver, only when the user explicitly asks for it** for an incomplete audit,
+one per provider listed in `missing_reviews`:
 
 ```bash
-"$PYTHON_CMD" "$FINALIZER" prepare "$EPIC_DIR" \
-  --run "$IMPLEMENT_RUN" --main-root "$REPOSITORY_ROOT" \
-  --policy "$WRAP_POLICY" --audit-policy "$AUDIT_POLICY"
+$PY "$S/scope_check.py" waive --epic $EPIC --missing <provider> \
+  --approver "<user>" --reason "<the user's reason>"
 ```
 
-Accept only `prepared` or `already_prepared`. The result must provide the
-archived epic directory, staged tree, current main HEAD, worktree HEAD, fixed
-closure label, fixed merge label, and seal hash. The prepared state is the exact
-sealed implementation delta plus archival. Do not add files, broaden staging,
-rewrite links or documentation, or create a separate tracking marker.
+A waiver is recorded in `review.md` as a quality risk and waives only that
+provider's missing review: at least one independent review must have
+completed, and every finding must still be closed. It never turns the audit
+into a pass. Run `scope_check.py gate2` again after recording it; that
+summary (a new commit, the audit shown as incomplete with the waiver) is what
+the user approves.
 
-Present one approval request containing:
+## 2. Gate 2: the user approves the exact commit
 
-- the exact staged tree;
-- the current main HEAD and main branch;
-- the fixed closure label and merge label;
-- the archived epic path and seal hash; and
-- the explicit intent to create the closure commit and immediately merge that
-  exact commit into the displayed main HEAD.
+Show the summary exactly as printed:
 
-Approval is valid only for those displayed values. Cancellation leaves the
-prepared state resumable and creates no commit or merge.
+- the branch commit SHA to be merged;
+- the diffstat, production code lines and new modules against the plan's
+  estimate, and the concepts added (planned and actual);
+- the audit verdict, including rejected and adjudicated findings, accepted
+  quality tradeoffs, and any waiver;
+- the verification summary;
+- the doc changes and the plan's decision log;
+- the commit list.
 
-## Commit and merge the approved state
+Ask the user to approve that SHA. A pre-approval does not count here; the
+approval must name or confirm this commit.
 
-After explicit approval, pass back exactly the approved identities:
+## 3. Merge exactly the approved commit
 
 ```bash
-"$PYTHON_CMD" "$FINALIZER" commit-merge "$ARCHIVED_EPIC_DIR" \
-  --run "$IMPLEMENT_RUN" --main-root "$REPOSITORY_ROOT" \
-  --approved-staged-tree "$APPROVED_STAGED_TREE" \
-  --approved-main-head "$APPROVED_MAIN_HEAD" \
-  --approved-main-branch "$APPROVED_MAIN_BRANCH" \
-  --policy "$WRAP_POLICY" --codegraph-policy "$CODEGRAPH_POLICY"
+$PY "$S/scope_check.py" merge --epic $EPIC --commit <approved-sha> --approver "<user>"
 ```
 
-Do not run Git or CodeGraph separately. The finalizer rechecks the approved
-tree, main HEAD, locks, roots, labels, and seal; commits the fixed closure;
-merges that exact commit; verifies the result; and refreshes CodeGraph at the
-main root. Drift stops before mutation and requires a new prepare result and
-approval. `already_prepared` and `already_merged` are resumable/idempotent
-states, not permission to weaken checks.
+It re-runs the checks, stops if the branch has moved since approval (ask
+again), merges that commit into the base branch in the main checkout with
+`--no-ff`, records the approved SHA, approver, and date as trailers in the
+merge commit, and removes the worktree. It never modifies the approved
+branch. On a merge conflict it aborts the merge and reports it: resolve on
+the epic branch through `/implement`, then return here.
+
+After the merge, if `codegraph` is on PATH and `.codegraph/` exists in the
+main checkout, run `codegraph sync` there.
 
 ## Final response
 
-Report the exact outcome (`NOT_READY`, `PREPARED_NOT_APPROVED`, `MERGED`,
-`ALREADY_MERGED`, or `ABANDONMENT_DEFERRED`), seal hash, staged tree, approved
-main HEAD and branch, closure and merge commits when present, archived epic
-path, and CodeGraph status. Report any pending optional external synchronization
-without claiming it completed. Never claim wrap completion unless the finalizer
-returns `merged` or `already_merged`.
+Report the approved SHA, the merge commit and its trailers, the base branch,
+the archived epic path, and the removed worktree. Recommend `/sync_product
+<epic>` (Codex: `scope:sync_product <epic>`) when the epic changed product
+scope, terminology, or workflows.

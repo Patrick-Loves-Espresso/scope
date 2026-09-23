@@ -59,8 +59,10 @@ Before opening a PR, run:
 
 This runs the same checks as GitHub Actions, including whitespace checks for
 staged and untracked files, mirrored Claude/Codex file changes, generated-file
-rejection, install smoke, the focused v2 validator suite, and its coverage
-threshold.
+rejection, the install smoke test (including removal of retired files), the
+complexity budgets (lifecycle Python ≤ 3,000 lines, modules ≤ 450 code lines,
+lifecycle command prompts ≤ 150 lines, one policy file), and the test suite
+with its 90% coverage threshold.
 
 For quick manual install checks, you can also verify that installation propagates
 the files correctly:
@@ -93,7 +95,9 @@ Examples to exclude:
 
 Command changes should be explicit about paths and working directories. If a command operates inside an epic worktree, document whether reads, writes, and git commands run from the main repository root or the worktree.
 
-For CodeGraph support, prefer instructions that use CodeGraph when present, with MCP first when available and CLI fallback when MCP is unavailable or unhealthy.
+For CodeGraph support, use the CodeGraph CLI when it is installed, read-only for workers and reviewers; Scope does not use a CodeGraph MCP.
+
+Every new rule should state the model weakness it assumes and how to test whether it is still needed. Record incidents in `docs/lessons-learned/` first; add code only when a lesson recurs and no simpler fix exists.
 
 ## Review
 

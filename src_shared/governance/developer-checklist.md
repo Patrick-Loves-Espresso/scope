@@ -1,51 +1,39 @@
 # Developer Pre-Completion Checklist
 
-**MANDATORY: Read this file from disk before marking ANY story complete.**
-Do NOT rely on memory. Do NOT summarize. READ THE FILE every time.
+Read this file from disk before reporting a story or task complete. It checks
+the rules in `simplicity-and-size.md`; it does not replace them.
 
----
+## Delivery
 
-## Before Marking Complete, Verify ALL Items:
+- [ ] **Criteria delivered through a real entry point.** Each affected
+  acceptance criterion works through the entry point a user or caller uses,
+  not only in isolated units.
+- [ ] **Mapped tests pass.** The tests the plan maps to each affected
+  criterion exist, assert real behavior, and pass. Every skip has a reason.
+- [ ] **Promised output observed.** When a criterion promises output, state,
+  or a side effect, a representative run shows it. Code for a migration,
+  backfill, or sync is not proof that it ran.
+- [ ] **Live smoke test.** A new external service, database, or container was
+  exercised once for real, not only through mocks.
+- [ ] **Coverage.** New and changed production code is covered at the epic's
+  target (90% by default), or the plan records why not.
 
-### Story Completion Proof
+## Simplicity and size
 
-- [ ] **Acceptance-proof summary complete** — For every affected acceptance criterion and boundary-plan obligation, your completion summary maps the obligation to concrete evidence:
-  - Promise verified
-  - Delivery-manifest acceptance/proof ID(s)
-  - Verification method
-  - Real runtime path used: yes/no
-  - Representative data used: yes/no
-  - Observable result
-  - Remaining unproven work, if any
-- [ ] **Runtime path proven for integration work** — If the story adds or changes an adapter, mapper, importer, writer, parser, service call, queue/worker path, scheduled job, backfill, migration, CLI, dashboard/API integration, or any side-effecting component, unit tests alone are insufficient. Prove the intended entrypoint calls the component, upstream inputs are available there, and downstream output/state is produced.
-- [ ] **Promised outputs observed** — If the story promises new output, persisted rows, generated files, extracted items, metrics, events, or side effects, provide a representative run showing the output exists. If an acceptance criterion names a threshold, measure it. If zero output is valid, the acceptance criterion or boundary plan must explicitly say zero is valid.
-- [ ] **Precise completion status used** — Use `verified` only when every required proof passed and promised value was observed through the intended path. Use `implementation_complete_unverified` or `blocked` when proof is partial, and record the missing proof in `remaining_unproven_work`.
+- [ ] **Nothing beyond the criteria.** No item from the "Not building" list,
+  no speculative configuration, no single-use abstraction.
+- [ ] **No re-validation of internal calls** and no handling for cases that
+  cannot occur.
+- [ ] **Module size.** No production module above 450 code lines without a
+  recorded exception; a module already above it did not grow.
+- [ ] **No stubs, dead code, or leftovers** from earlier attempts.
+- [ ] **Components are wired**: every new module is used by a real entry point.
 
-### Code Quality (see production-code-rules.md for details)
+## Records
 
-- [ ] **Boundary obligations satisfied** — Re-read the implementation boundary plan. Does the code satisfy every `required_contract`, `required_touchpoint`, `forbidden_change`, and `proof_obligation`, not just what tests check?
-- [ ] **Candidate/developer-discovered files documented** — Record candidate files used, relevant candidate files skipped, and developer-discovered files with source evidence. Candidate files are advisory; unexplained changed files are not allowed.
-- [ ] **No stubs or placeholders** — No TODO, Placeholder, Stub, Mock, pass, NotImplementedError in production code.
-- [ ] **I/O is real** — If intent says "calls/sends/queries", real I/O code exists (not hardcoded returns).
-- [ ] **No hardcoded values** — All configurable values in `.yaml` config, not literals in code.
-- [ ] **Components are wired** — Every new class/module is imported and used upstream (not just in its own tests).
-
-### Integration
-
-- [ ] **Live smoke test wired and run** — If this story introduces a new external service, local/cloud dependency, runtime-required acceptance row, migration/backfill/bootstrap/onboarding/reindex flow, or end-to-end value path, create or update the smoke checker that exercises the real path. Run it before marking the story complete and record the command, environment, result, counts, and durable evidence in `implementation-evidence.yaml`.
-- [ ] **Runtime-required rows not deferred to audit** — Every affected `runtime_evidence.required: true` row must have a concrete command/checker and a passing result before implementation is considered complete. If credentials or infrastructure are missing, leave the story non-complete as `blocked_missing_runtime_input` and report the blocker; do not wait for `/audit_epic` to discover it.
-- [ ] **Contract compliance** — If `contracts.py` exists, `mypy --strict` passes on all files you touched.
-- [ ] **Coverage threshold met** — Story-level automated test coverage is 90%+ for the code you created or modified, unless the approved test strategy documents an explicit exception.
-
-### Consistency
-
-- [ ] **Pattern consistency** — Does this story follow the same patterns as previous stories? (error handling, naming, logging, config access). If different, flag as `decision_candidate`.
-- [ ] **No dead code** — After fix cycles, scan for unused imports, orphaned functions, commented-out code from earlier attempts.
-- [ ] **No redundant tests** — New tests don't duplicate existing coverage.
-
-### Governance
-
-- [ ] **Lesson compliance** — Re-read `docs/lessons-learned/INDEX.md`. Any applicable lesson violated = bug.
-- [ ] **Developer-discovered files documented** — Every modified file that is not a candidate file or required touchpoint is in your agent summary under `developer_discovered_files` with evidence.
-- [ ] **Scope check** — Did you add functionality outside the boundary plan? Stick to binding obligations. Don't gold-plate.
-- [ ] **Decision tracking** — If you made an unplanned architectural choice, flag it as `decision_candidate` in concerns.
+- [ ] **Plan updated.** Story status, progress log, decision log (reversible
+  choices, and why), and surprises are current.
+- [ ] **Durable docs.** Each doc obligation of the story is done;
+  `docs/architecture/` describes the current state only.
+- [ ] **Lessons.** Nothing in `docs/lessons-learned/INDEX.md` is violated.
+- [ ] **Committed** with a meaningful label that names the story.

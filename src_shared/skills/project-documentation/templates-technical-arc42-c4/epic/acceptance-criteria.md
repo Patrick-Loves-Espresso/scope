@@ -1,34 +1,32 @@
 # {epic-id}: Acceptance Criteria
 
-This file is the canonical authority for observable product behavior. Use one
-heading per independently provable promise. Replace every `{NNN}` placeholder
-and remove unused sections.
+The user approves this file at Gate 1. It states what the epic delivers, how
+big it should be, and what it deliberately leaves out. Keep criteria concise
+and observable; include only the error cases that matter to the product.
 
-## AC-{NNN}: [Observable successful outcome]
+```yaml scope
+size_estimate:
+  production_loc: 0   # new or changed production code lines (no tests, no docs)
+  files: 0            # production files added or changed
+  rationale: ""       # one line: why this size is proportional to the criteria
+```
 
-**Given:** [precondition]
+## Not building
 
-**When:** [user or system action]
+- [Something a reader might expect that this epic deliberately excludes]
 
-**Then:** [observable result]
+## Criteria
 
-**Success measure:** [threshold or exact condition]
+### AC-001: [Observable outcome]
 
-## ERR-{NNN}: [Observable rejection, error, or recovery outcome]
+**Given** [precondition] **when** [user or system action] **then** [observable
+result, with a measurable threshold where one applies].
 
-**Given:** [invalid, unavailable, partial, or failed condition]
+### AC-002: [Error case that matters to the product]
 
-**When:** [action or failure]
+**Given** [invalid, unavailable, or failed condition] **when** [action] **then**
+[rejection, error, or recovery the user can observe].
 
-**Then:** [rejection, error, rollback, retry, or recovery behavior]
+## Open product questions
 
-## E2E-{NNN}: [Cross-boundary outcome]
-
-**Path:** [entrypoint through observable result]
-
-**Then:** [end-to-end evidence required]
-
-## Deferred Behavior
-
-List explicitly deferred behavior. Deferred statements are non-binding and must
-not be presented as accepted implementation requirements.
+None

@@ -53,8 +53,11 @@ Does this change what the user sees or can do?
 
 | Type | Destination |
 |------|-------------|
-| **ADR** | `docs/epics/{epic}/design.md` or `docs/architecture/adr/` |
-| **PDR** | `docs/epics/{epic}/design.md` or `docs/product/decisions.md` |
+| **ADR** | The scope's `adr/` folder (`docs/architecture/adr/`, `backend/adr/`, or `frontend/adr/`), listed in `09-adr-summary.md` |
+| **PDR** | `docs/product/decisions.md` |
+
+A reversible implementation choice inside one epic is not an ADR: it belongs
+in that epic's `plan.md` decision log.
 
 If still unclear after applying the decision tree, ask: "Does this decision change what the user experiences, or how the system is built?"
 
@@ -104,8 +107,8 @@ Ask the user these questions (adapt based on what the initial description alread
 
 **Save ONLY the structured decision** — not the interview conversation.
 
-**For an epic ADR** — append under `## Product and Architecture Decisions`
-in the epic's `design.md`. For a system ADR, use the architecture ADR folder:
+**For an ADR** — create `ADR-{NNN}-{kebab-title}.md` in the scope's `adr/`
+folder and add it to `09-adr-summary.md`. Name the epic when one prompted it:
 
 ```markdown
 ## ADR-{NNN}: {Title}
@@ -133,8 +136,7 @@ in the epic's `design.md`. For a system ADR, use the architecture ADR folder:
 {Key tradeoffs — 2-3 bullet points}
 ```
 
-**For an epic PDR** — append under `## Product and Architecture Decisions`
-in the epic's `design.md`. For a system PDR, use `decisions.md`:
+**For a PDR** — append to `docs/product/decisions.md`:
 
 ```markdown
 ## PDR-{NNN}: {Title}
@@ -162,13 +164,9 @@ in the epic's `design.md`. For a system PDR, use `decisions.md`:
 
 ### Step 5: ADR/PDR Numbering
 
-**Epic-level**: Read existing ADR/PDR entries in `design.md`, find the highest
-number, and increment it.
-
-**System-level**:
-- ADR: Read `docs/architecture/09-adr-summary.md` for highest number. Also scan
-  epic `design.md` files for inline ADRs. Use the next global number.
-- PDR: Read `docs/product/decisions.md` for highest number.
+- ADR: Read `docs/architecture/09-adr-summary.md` and the `adr/` folders for
+  the highest number. Use the next number of the single global sequence.
+- PDR: Read `docs/product/decisions.md` for the highest number.
 
 ### Step 6: Cross-Post (if available)
 
@@ -200,8 +198,8 @@ Saved {ADR|PDR}-{NNN}: {Title}
 ```python
 # Use the most recent committed decision artifact as the discovery boundary.
 last_decision = Bash(
-    "git log -1 --format='%aI' -- docs/architecture/adr/ "
-    "docs/product/decisions.md docs/epics/*/design.md"
+    "git log -1 --format='%aI' -- docs/architecture/adr/ docs/architecture/backend/adr/ "
+    "docs/architecture/frontend/adr/ docs/product/decisions.md"
 ).strip()
 
 if last_decision:
@@ -216,8 +214,8 @@ else:
     print(f"No committed decision boundary found. Scanning since {since_date}.")
 ```
 
-**Important:** Already-recorded decisions (those already in epic `design.md`,
-system ADRs, or `decisions.md`) must be filtered out. Read existing decision
+**Important:** Already-recorded decisions (ADRs, `decisions.md`, and the
+decision logs of epic `plan.md` files) must be filtered out. Read existing decision
 files and exclude any candidates that match existing entries by title or
 content.
 
@@ -241,11 +239,10 @@ Look for signals in commit messages and diffs:
 - New patterns introduced (new base classes, utilities, middleware)
 - Infrastructure changes (Dockerfile, CI/CD, IaC)
 
-**Source 2: Durable implementation and audit evidence**
+**Source 2: Epic plans and reviews**
 ```python
-summaries = Glob("docs/epics/**/implementation-summary.md")
-evidence = Glob("docs/epics/**/implementation-evidence.yaml")
-findings = Glob("docs/epics/**/audit-findings.yaml")
+plans = Glob("docs/epics/**/plan.md")      # decision logs: which choices proved lasting
+reviews = Glob("docs/epics/**/review.md")  # adjudicated findings that settled a design question
 ```
 
 **Source 3: Code patterns**
@@ -264,7 +261,7 @@ new_packages = Grep("new dependency", glob="requirements*.txt")
 **Source 4: Existing docs gap**
 ```python
 # Compare what's documented vs. what's in code
-existing_decisions = Read("docs/epics/{active-epic}/design.md")
+existing_decisions = Read("docs/epics/{active-epic}/plan.md")  # its decision log
 # Are there technologies/patterns in code not covered by ADRs?
 ```
 

@@ -1,222 +1,110 @@
 ---
 name: audit_epic
-description: Run a read-only evidence audit and return PASS, FAIL, BLOCKED, or NOT_READY.
+description: Independent two-provider audit of an implemented epic, with fixes, verification, and adjudication until settled.
 args: "{epic-id}"
 ---
 
 # audit_epic
 
-For this orchestration-only session, prefer `gpt-6-sol` at high effort in
-Codex or `claude-opus-5-5` at high effort in Claude. The host session selects its
-own model; worker/reviewer policies do not switch it. Respect an explicit user
-model choice and do not interrupt an active workflow solely to change models.
+You orchestrate. Claude and Codex audit the epic's branch independently; the
+implementer fixes or rejects findings; the raising reviewer verifies; an
+uninvolved reviewer adjudicates rejections. Never review, fix, or judge a
+finding yourself. You talk to the user; workers and reviewers do not.
 
-You are the sole user-facing orchestrator. Deterministic tools own audit state,
-independent reviewers own semantic review, and one bounded read-only worker
-normalizes their findings. Do not inspect implementation broadly, review it
-semantically, or remediate it in a direct audit.
+Invoking this command authorizes sending the epic's branch and documents to
+the configured reviewer providers.
 
-Invoking this command implicitly authorizes transmission of this workflow's
-hash-bound review packet and only its declared artifacts to every reviewer
-selected by the configured reviewer policy, profile, and set, including
-external-provider CLIs. Do not ask for separate transmission approval before
-launch. This does not authorize other providers, unbound files, credentials,
-or reviewer writes.
+## Setup
 
-Return exactly one outcome:
-
-- `PASS`: every required gate and reviewer completed and all findings terminal;
-- `FAIL`: current findings are remediable inside the approved boundary;
-- `BLOCKED`: authority, provider, or required evidence is unavailable;
-- `NOT_READY`: durable implementation evidence fails before an attempt exists.
-
-Audit may write only its attempt, evidence, findings, report, and ignored
-runtime files. It never changes implementation, tests, approved handoff
-artifacts, or Git history.
-
-## Resolve and readiness
+Run in the epic's worktree (`/implement` executes this command there).
 
 ```bash
-EPIC_ID="{epic-id}"
-WORKING_ROOT="$(pwd -P)"
-GIT_COMMON_DIR="$(git -C "$WORKING_ROOT" rev-parse --path-format=absolute --git-common-dir)"
-REPOSITORY_ROOT="$(cd "${GIT_COMMON_DIR}/.." && pwd -P)"
-EPIC_DIR="$(find "$WORKING_ROOT/docs/epics" -mindepth 1 -maxdepth 1 -type d \
-  -iname "*${EPIC_ID}*" -print | sort | head -1)"
-# Codex:
-PROVIDER="codex"; SCOPE_ROOT="$(cd "$REPOSITORY_ROOT/plugins/scope" && pwd -P)"
-# Claude instead uses:
-# PROVIDER="claude"; SCOPE_ROOT="$(cd "$REPOSITORY_ROOT/.claude" && pwd -P)"
-WORKER="${SCOPE_ROOT}/scripts/scope-worker.py"
-REVIEWER="${SCOPE_ROOT}/scripts/scope-reviewer.py"
-REFINEMENT="${SCOPE_ROOT}/scripts/validate-refinement.py"
-AUDIT="${SCOPE_ROOT}/scripts/audit-artifacts.py"
-AUDIT_POLICY="${SCOPE_ROOT}/config/audit-policy.yaml"
-REVIEWER_POLICY="${SCOPE_ROOT}/config/reviewer-policy.yaml"
-RUN="${REPOSITORY_ROOT}/tmp_debug/scope-runs/${EPIC_ID}/audit_epic/run.yaml"
-WORKER_PROFILE="default"       # budget only when the user asks
-REVIEWER_PROFILE="default"     # budget only when the user asks
-REVIEWER_SET="standard"        # expanded only when the user asks
+EPIC="{epic-id}"
+WT="$(git rev-parse --show-toplevel)"              # wip/<epic>, branch epic/<epic>
+ROOT="$(cd "$(git rev-parse --git-common-dir)/.." && pwd -P)"
+HOST=claude; SCOPE_ROOT="$ROOT/.claude"            # Claude Code
+# HOST=codex; SCOPE_ROOT="$ROOT/plugins/scope"     # Codex
+S="$SCOPE_ROOT/scripts"; PY=python3
+$PY "$S/scope_verify.py" covers --epic $EPIC
 ```
 
-Resolve exactly one epic and one interpreter. Require the runners, policies,
-v2 run contract, executor policy, reviewer template, current approved refinement
-handoff, delivery manifest, and implementation evidence.
-Use the main checkout's Scope installation for a worktree audit; installing Scope
-inside the worktree changes the runner-validated workspace snapshot.
+The epic folder must already be archived under `docs/epics/_implemented/` on
+this branch and the tree must be clean. If `covers` reports that no passing
+verification covers the current commit, run
+`$PY "$S/scope_verify.py" run --epic $EPIC --milestone final` first; on failure,
+return to `/implement` step 2. If `codegraph` is on PATH, run `codegraph sync`
+in the worktree when `.codegraph/` exists.
+
+## 1. Full audit
 
 ```bash
-"$PYTHON_CMD" "$REFINEMENT" validate "$EPIC_DIR" \
-  --phase handoff --repo-root "$WORKING_ROOT"
-"$PYTHON_CMD" "$AUDIT" verify-evidence "$EPIC_DIR" \
-  --repo-root "$WORKING_ROOT" --policy "$AUDIT_POLICY"
+$PY "$S/scope_launch.py" review --host $HOST --workflow audit --mission full --epic $EPIC
 ```
 
-On either failure, return `NOT_READY` with every verifier error and create no
-audit attempt. Otherwise initialize the compact run:
+Both providers review the diff against the approved criteria, the plan and its
+decision log, the verification record and its logs, and the final docs against
+the code in both directions. An unavailable or failed provider is replaced by
+the configured fallback (Muse Spark). If fewer than two independent reviewers
+completed, rerun the missing one with `--providers <name>` or wait for the
+provider. The audit is then **incomplete**: never ask the user to accept a
+one-provider audit, and never count it as passed.
+
+## 2. Fix, verify, adjudicate until settled
+
+Loop on:
 
 ```bash
-"$PYTHON_CMD" "$WORKER" init \
-  --repository-root "$REPOSITORY_ROOT" --working-root "$WORKING_ROOT" \
-  --scope-root "$SCOPE_ROOT" --epic-id "$EPIC_ID" \
-  --command audit_epic --worker-profile "$WORKER_PROFILE"
+$PY "$S/scope_review.py" status --epic $EPIC --workflow audit
 ```
 
-For resume or interruption use only `status`, `recover`, and identity-checked
-`cancel`. Pass the current active job ID returned by `status`; a stale cancel
-must be rejected. Never repair ownership, auto-revert user work, or create
-parallel incident state.
+Act on the first that applies, then check status again:
 
-```bash
-"$PYTHON_CMD" "$WORKER" status --run "$RUN"
-"$PYTHON_CMD" "$WORKER" recover --run "$RUN"
-"$PYTHON_CMD" "$WORKER" cancel --run "$RUN" \
-  --job-id "$ACTIVE_JOB_ID" --reason "$REASON"
-```
+- `needs_user`: product-scope disputes or `product_decision` findings. Ask the
+  user all of them at once; record each answer with
+  `$PY "$S/scope_review.py" decide --epic $EPIC --finding <id> --outcome
+  finding_upheld|rejection_upheld --note "<the user's words>"`.
+- `blocked`: a finding failed again after its diagnosis. Ask the user only for
+  a product choice, an accepted risk (`rejection_upheld`), or more resources;
+  otherwise stop and report the epic as blocked.
+- `needs_diagnosis`: the finding survived two fixes. Run
+  `review --workflow audit --mission diagnose --finding <id>`; the next
+  implementer job gets the diagnosis.
+- `needs_disposition`: run a fresh implementer (add any diagnosis to the task):
 
-## Prepare one attempt
+  ```bash
+  $PY "$S/scope_launch.py" work --host $HOST --role implementer --epic $EPIC \
+    --task "Resolve the open audit findings in review.md."
+  ```
 
-Use `full` unless every named target is already
-`remediated_pending_verification`. A targeted attempt names each coupled
-finding with repeated `--finding`:
+  Handle its status exactly as `/implement` step 1 does (`needs_check`,
+  `needs_user`, renewed Gate 1, `blocked`). Only after `done`, run
+  `$PY "$S/scope_verify.py" run --epic $EPIC --milestone remediation`; on
+  failure send its problems to a fresh implementer and run it again.
+- `needs_verification` or `needs_rejection_check`:
+  `review --workflow audit --mission verify`.
+- `needs_adjudication`: `review --workflow audit --mission adjudicate`.
+- Nothing pending but `complete: false`: rerun each provider in `missing_reviews` with
+  `--mission full --providers <name>`, or wait for the provider.
+- Nothing pending but `fresh: false`: the branch changed after the last review
+  round; run `scope_verify.py run --milestone remediation`, then the full
+  audit again.
 
-```bash
-"$PYTHON_CMD" "$AUDIT" prepare "$EPIC_DIR" --run "$RUN" \
-  --mode "$MODE" $FINDING_ARGUMENTS --reason "$REASON" \
-  --reviewer-profile "$REVIEWER_PROFILE" --reviewer-set "$REVIEWER_SET" \
-  --policy "$AUDIT_POLICY"
-```
+Verification passes check only the named findings and add nothing new. A real
+defect is never accepted because a round budget ran out.
 
-The printed directory contains one canonical `audit-attempt.yaml` and one
-immutable `review-packet.yaml`. Preparation binds the current base HEAD plus
-tracked/untracked content state, the approved handoff and native artifacts,
-implementation evidence, exact gates, reviewer assignments, and target IDs. It
-does not require implementation HEAD to equal its base because implementation
-is intentionally uncommitted.
+## Result
 
-One full and one targeted attempt are the normal hard budget. Minor defects
-remain mandatory in both; there is no third audit round. A pending attempt
-is resumed only when its fingerprint, boundary, profiles, set, mode, and targets
-match. Never delete, renumber, or use free-text reason to reset the budget.
-
-## Mechanical gates
-
-Use the deterministic executor for pending gates:
-
-```bash
-"$PYTHON_CMD" "$AUDIT" execute-gates "$EPIC_DIR" "$ATTEMPT_DIR" --run "$RUN"
-```
-
-The executor captures raw output, strict counts, exit code and timing. It reuses
-implementation evidence only for identical argv, cwd, source and approved
-environment fingerprints with intact logs. `fresh: true` always reruns. Missing
-or ambiguous counts fail closed. No model transcribes successful execution.
-A targeted closure must use an approved manifest command or declare the same
-explicit execution contract in hash-bound `remediation.execution`. For a semantic
-closure predicate, retain its text for independent review and bind a runnable
-check separately; `remediation.proof_level` defaults to unit and may explicitly
-name inspection for a non-test check. Reuse runner result rows for remediation
-checks; never transcribe counts from memory.
-
-An unexecuted blocked gate uses `--status blocked --reason ...` and no counts.
-`not_applicable` is never a free-text waiver: first record a current user or
-preapproval authority row naming that gate, then cite its ID:
-
-```bash
-"$PYTHON_CMD" "$AUDIT" record-authority "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --run "$RUN" --authority-id "$AUTHORITY_ID" --kind gate_not_applicable \
-  --subject "$GATE_ID" --source "$AUTHORITY_SOURCE" --decision approved
-"$PYTHON_CMD" "$AUDIT" record-gate "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --run "$RUN" --gate "$GATE_ID" --status not_applicable \
-  --authority-id "$AUTHORITY_ID"
-```
-
-Then run:
-
-```bash
-"$PYTHON_CMD" "$AUDIT" validate "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --phase pre_review --repo-root "$WORKING_ROOT" --policy "$AUDIT_POLICY"
-```
-
-## Independent review
-
-When the packet has assignments, the reviewer runner performs one all-provider
-preflight barrier and then launches them concurrently with the run-level
-CodeGraph state:
-
-```bash
-"$PYTHON_CMD" "$REVIEWER" run --workflow audit --packet "$PACKET" \
-  --repo-root "$WORKING_ROOT" --policy "$REVIEWER_POLICY" --run "$RUN" \
-  --reviewer-profile "$REVIEWER_PROFILE" --reviewer-set "$REVIEWER_SET"
-```
-
-Reviewers use direct read-only CLIs and immutable artifact hashes. Do not
-substitute this session or another provider. Retry only a proven pre-semantic
-infrastructure failure in the same packet with `--repair-infrastructure`.
-Semantic timeout, invalid output, a question, or unverified evidence remains
-visible and blocks PASS. Every valid candidate is ingested even from an
-aggregate failed or blocked receipt.
-
-## Source-bounded synthesis and decision
-
-Before synthesis, resolve any genuine accepted-risk request with the user and
-record hash-bound authority naming its fingerprint:
-
-```bash
-"$PYTHON_CMD" "$AUDIT" record-authority "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --run "$RUN" --authority-id "$AUTHORITY_ID" --kind accepted_risk \
-  --subject "$FINGERPRINT" --source "$AUTHORITY_SOURCE" --decision approved
-```
-
-Synthesize all validated sources directly, without a model job:
-
-```bash
-"$PYTHON_CMD" "$AUDIT" apply-synthesis "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --run "$RUN" --policy "$AUDIT_POLICY"
-```
-
-The applier requires every deterministic, reviewer, and active-ledger source
-exactly once; merges only identical fingerprints, rejects conflicting
-dispositions, categories, or closure tests; preserves maximum severity and minority evidence; and verifies
-accepted-risk authority. A targeted attempt can verify only its named findings
-after strict closure proof and every required detecting provider.
-
-```bash
-"$PYTHON_CMD" "$AUDIT" finalize "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --run "$RUN" --policy "$AUDIT_POLICY"
-"$PYTHON_CMD" "$AUDIT" validate "$EPIC_DIR" "$ATTEMPT_DIR" \
-  --phase complete --repo-root "$WORKING_ROOT" --policy "$AUDIT_POLICY"
-```
-
-Only complete validation authorizes the outcome. Direct audit never launches a
-write implementation worker. A later explicit remediation request—or the
-parent `implement` workflow—may remediate `FAIL` findings and request the one
-targeted attempt.
+- **passed**: status reports `complete: true` and `settled: true`, and
+  `scope_verify.py covers` passes.
+- **incomplete**: fewer than two independent reviewers completed. Gate 2 is
+  blocked until one runs; only the user can separately invoke the waiver in
+  `/wrap_epic`.
+- **blocked**: a finding needs the user or stays unresolved after diagnosis.
 
 ## Final response
 
-Report outcome, attempt/mode, repository fingerprint, every gate with exact
-counts, reviewer assignment and decision coverage, findings with source IDs,
-authority, residual risk, and unavailable evidence. For `NOT_READY`, confirm
-that no attempt was created. Never claim PASS when any gate, reviewer, source,
-hash, question, or finding is incomplete.
+Report the result, the reviewers with their models (standard or fallback),
+findings by severity and outcome (fixed and verified, rejected and how
+adjudicated, accepted quality tradeoffs, user decisions), verification counts,
+and anything open. When passed, recommend `/wrap_epic <epic>` (Codex:
+`scope:wrap_epic <epic>`).
