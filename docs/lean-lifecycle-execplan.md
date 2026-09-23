@@ -182,7 +182,10 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 - [x] 2026-09-23 Verified: Codex `workspace-write` + `--add-dir <git common dir>` can commit in a linked worktree.
 - [x] 2026-09-23 M1 draft written; Codex review #1 (gpt-6-astra, high, read-only): 17 findings, all accepted and fixed (see below)
 - [x] 2026-09-23 M1 committed (design draft after review #1)
-- [ ] M2 Scripts and tests
+- [x] 2026-09-23 M2: six modules (1,477 lines; largest 280 code lines) and 111 tests
+  (black-box lifecycle with fake provider CLIs plus unit tests): 111 passed, 0
+  failed, 0 errors, 0 skipped; 100% statement coverage of the new modules
+  (subprocesses measured via `patch = subprocess`)
 - [ ] M3 Removal and updates
 - [ ] M4 Scope docs
 - [ ] M5 Validation and report
