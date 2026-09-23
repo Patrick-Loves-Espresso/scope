@@ -3,10 +3,10 @@
 # Workers run on the provider that hosts the command (Claude Code or Codex).
 workers:
   claude:
-    planner: {model: claude-opus-5-5, effort: max}
+    planner: {model: claude-opus-5-5, effort: xhigh}
     implementer: {model: claude-opus-5-5, effort: max}
   codex:
-    planner: {model: gpt-6-astra, effort: max}
+    planner: {model: gpt-6-astra, effort: xhigh}
     implementer: {model: gpt-6-sol, effort: max}
 
 # Independent reviewers. Refinement runs at high effort (plan §4.3).

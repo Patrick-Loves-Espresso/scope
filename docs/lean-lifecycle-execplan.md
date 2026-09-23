@@ -230,11 +230,14 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 | U2 | Audit reviewer effort unchanged: Codex `gpt-6-astra` max, Claude `claude-opus-5-5` xhigh (user) | Plan sets `high` only for refinement |
 | U3 | Retire `/content_refine` and the website-strategy skill with D11 (user) | They only served the web-epic workflow |
 | U4 | Keep CodeGraph use, drop `scope_codegraph.py` and its policy (user) | Value is in read-only queries; the 548-line manager is not core. Commands run one `codegraph sync` (or `init` when `.codegraph/` is missing and git-ignored) |
+| U5 | Planner effort `xhigh` for Claude and Codex (user, after the dry run) | Planner jobs at max took 4–9 min for a 21-line epic |
+| U6 | Planners may prototype in a temporary directory outside the repository (user) | The dry-run planner measured its design that way; the repository stays untouched |
+| U7 | No detailed cost measurement in Scope; use `ccusage claude` and `ccusage codex` for testing and the pilot (user) | Reviewer CLIs do not report usage in the formats Scope reads |
 | L1 | The implementer invokes the runner (`size` after each story, `run` at milestones); the orchestrator runs final verification | Only way to check per story inside one implementer job; numbers still come from the runner |
 | L2 | `/implement` executes `audit_epic.md` in-session, as today | Keeps user stops at the two gates |
 | L3 | Refinement commits (Gate 1, review rounds, final plan) land on the main checkout's current branch | Plan requires the Gate 1 commit; mirrors today's handoff commit |
 | L4 | One shared policy file keyed by host provider; worker/reviewer "budget" profiles dropped | One-policy budget; profiles were extra configuration |
-| L5 | Planner uses the old `design_handoff` routing, implementer the old `story` routing (also for audit fixes) | Nearest existing user routing; plan is silent |
+| L5 | Planner uses the old `design_handoff` models (effort later set to `xhigh`, U5), implementer the old `story` routing (also for audit fixes) | Nearest existing user routing; plan is silent |
 | L6 | Any maintained rejection (any severity) goes to adjudication; findings reset to `open` by the runner after `still_open`/`finding_upheld` | One rule; lets the parser know an author must act again |
 | L7 | After an accepted `implementation_growth` check, the 1.5× test applies to growth since that check (actual and planned increments) | Keeps D3 for all new work without re-triggering on already classified growth (review #1 F11) |
 | L8 | Code lines counted with `pygments` tokens (comments and docstrings excluded); `pygments` added to requirements, `filelock`/`jsonschema` dropped | Multi-language, one small maintained dependency (already pulled in by pytest) |
@@ -312,3 +315,6 @@ Suggestions taken: script paths quoted in prompts; commands run with `sh -c`
 - Dry run gap: a Codex read-only reviewer could not open the CodeGraph
   database. The old runner passed `--add-dir <index>` to Codex reviewers; that
   harvested detail had been dropped and is restored with a test.
+- 2026-09-23 User review of the final report: merge approved; planner effort
+  `xhigh` (U5); planner prototyping outside the repository allowed (U6);
+  `ccusage` for cost measurement (U7); Claude Code ≥ 2.1.280 required.

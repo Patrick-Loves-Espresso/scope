@@ -74,8 +74,10 @@ reviewer text, `approvals.yaml`, or `verification.yaml`.
 
 ## Boundaries
 
-Write only in the epic folder. Do not change code, commit, push, or launch
-other agents. Do not answer your own product questions.
+In the repository, write only in the epic folder. To check a design or an
+estimate you may prototype in a temporary directory outside the repository;
+remove it when done. Do not change the repository's code, commit, push, or
+launch other agents. Do not answer your own product questions.
 
 ## Final message
 
