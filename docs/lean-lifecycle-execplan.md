@@ -217,7 +217,10 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 - [x] 2026-09-23 Codex review #2 (gpt-6-astra, high, read-only, whole branch):
   13 findings; 12 accepted and fixed, F12 fixed in part (see below); 126 tests
   pass; PR gate passes
-- [ ] M5 final report
+- [x] 2026-09-23 M5 final report delivered in the session. Final gate: `git diff
+  --check` clean, 126 passed / 0 failed / 0 errors / 0 skipped, 100% statement
+  coverage, install smoke passes, budgets: Python 1,529 lines, largest module
+  288 code lines, prompts 139/119/110/99 lines, one policy file
 
 ## Decision log
 
