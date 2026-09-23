@@ -1,0 +1,10 @@
+# Gate 1 approval record. Written only by the orchestrator through
+# `scope_check.py approve`; agents never edit it. The blob hash identifies the
+# approved content, so later commits do not invalidate it. Any change to
+# acceptance-criteria.md needs renewed approval. The merge approval is recorded
+# as trailers in the merge commit, not here.
+acceptance_criteria:
+  blob: "<git blob hash of the approved acceptance-criteria.md>"
+  commit: "<commit that introduced the approved content>"
+  approved_by: "<approval source: who approved, and how>"
+  approved_on: "<YYYY-MM-DD>"

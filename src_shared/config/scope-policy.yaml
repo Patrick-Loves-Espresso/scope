@@ -1,0 +1,53 @@
+# Scope lifecycle policy. This is Scope's only policy file.
+
+# Workers run on the provider that hosts the command (Claude Code or Codex).
+workers:
+  claude:
+    planner: {model: claude-opus-5-5, effort: max}
+    implementer: {model: claude-opus-5-5, effort: max}
+  codex:
+    planner: {model: gpt-6-astra, effort: max}
+    implementer: {model: gpt-6-sol, effort: max}
+
+# Independent reviewers. Refinement runs at high effort (plan §4.3).
+reviewers:
+  refine:
+    claude: {model: claude-opus-5-5, effort: high}
+    codex: {model: gpt-6-astra, effort: high}
+    opencode: {model: meta/muse-spark-1.3-contributor, effort: high}
+    agy: {model: gemini-3.1-pro-high, effort: high}
+  audit:
+    claude: {model: claude-opus-5-5, effort: xhigh}
+    codex: {model: gpt-6-astra, effort: max}
+    opencode: {model: meta/muse-spark-1.3-contributor, effort: high}
+    agy: {model: gemini-3.1-pro-high, effort: high}
+standard_reviewers: [claude, codex]
+fallback_reviewer: opencode   # Muse Spark (D10); Gemini (agy) only on request
+
+timeouts_seconds:
+  planner: 7200
+  implementer: 14400
+  reviewer: 3600
+  preflight: 30
+  validation_command: 3600
+
+size:
+  growth_threshold: 1.5        # D3: actual above 1.5x the planned cumulative estimate
+  module_target_code_lines: 350
+  module_limit_code_lines: 450
+  story_complexity_max: 7
+
+# Read-only shell commands Claude reviewers may run (prefix match).
+reviewer_read_only_commands:
+  - git diff
+  - git log
+  - git show
+  - git status
+  - codegraph explore
+  - codegraph node
+  - codegraph query
+  - codegraph files
+  - codegraph callers
+  - codegraph callees
+  - codegraph impact
+  - codegraph affected
