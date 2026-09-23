@@ -128,6 +128,7 @@ def gate2(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]:
     head, base = git(root, "rev-parse", "HEAD"), base_commit(root)
     size = scope_verify.size_report(root, epic, policy)
     plan_text = (epic / "plan.md").read_text(encoding="utf-8")
+    plan_estimate = size["estimate"] or {}
     waived = f"INCOMPLETE (waived: {'; '.join(audit['waiver'])})" if audit["waiver"] else "INCOMPLETE"
     verdict = "passed" if audit["complete"] else waived
     closed = {state: [key for key, row in audit["findings"].items() if row["state"] == state]
@@ -139,8 +140,9 @@ def gate2(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]:
         f"## Gate 2: {epic.name}", "", f"**Commit to merge:** `{head}`", "",
         "### Diffstat", "", "```text", git(root, "diff", "--stat", base, "HEAD"), "```", "",
         "### Size against the plan", "",
-        f"- Production code lines added: {size['actual_loc']} (plan {size['estimate']}, Gate 1 "
-        f"{criteria['size_estimate'].get('production_loc')} LoC / {criteria['size_estimate'].get('files')} files)",
+        f"- Production code lines added: {size['actual_loc']} (plan {plan_estimate.get('production_loc')} LoC / "
+        f"{plan_estimate.get('files')} files; Gate 1 {criteria['size_estimate'].get('production_loc')} LoC / "
+        f"{criteria['size_estimate'].get('files')} files)",
         f"- New production modules: {size['new_modules']}",
         f"- Modules over the limit: {[m['path'] for m in size['modules'] if m['over_limit'] or m['grew_over_limit']]}",
         f"- Changes outside the planned paths: {size['scope_warnings']}", "",

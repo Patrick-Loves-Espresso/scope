@@ -197,7 +197,18 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 - [x] 2026-09-23 M4: `README.md` and `docs/scope-architecture.md` rewritten (with
   the §6 regrowth guardrails), Codex copies synced, CONTRIBUTING updated,
   superseded plans deleted (D12); PR checks pass
-- [ ] M5 Validation and report
+- [x] 2026-09-23 M5 dry run (throwaway repo `texttools`, epic DRY-001 word count,
+  host Claude, real Claude/Codex): Gate 1 approved by the user (4 criteria, 25
+  LoC / 1 file); planner 318 s + 527 s + 241 s ($4.65); refine review: Claude
+  approve, Codex 1 major (BOM handling vs AC-002), fixed and verified by Codex;
+  implementer 502 s ($2.12), 2 story commits, M1/M2 runner records, docs and
+  archive; final verification 6/6 tests, 4/4 criteria, lint/types/diff-cover
+  passing; audit Claude (xhigh) and Codex (max) approve; Gate 2 approved by the
+  user; merge `85b840c` of `b7ca5cb` with trailers, worktree removed. Size 21
+  LoC vs 22 planned. Not exercised with real providers (covered by fake-provider
+  tests): audit remediation, adjudication, fallback, size overrun, needs_check.
+  Reviewer costs are not reported by the CLIs' text output.
+- [ ] M5 Codex review #2 and final report
 
 ## Decision log
 
