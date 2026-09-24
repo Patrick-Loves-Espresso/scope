@@ -35,6 +35,7 @@ DECISIONS = {
 }
 REVIEW_MISSIONS = {"full", "verify", "adjudicate", "diagnose"}
 MISSIONS = {"refine": REVIEW_MISSIONS, "audit": REVIEW_MISSIONS, "implement": {"check"}}
+RECHECKABLE = {"closed", "closed_unverified", "closed_rejected", "accepted_tradeoff"}
 REPORTED = ("provider", "model", "status", "decision", "error", "duration_seconds", "fallback_for", "retried_after")
 CODEGRAPH = (
     "if `.codegraph/` exists and the `codegraph` CLI is installed, use its read-only queries "
@@ -134,9 +135,15 @@ def _assignments(args: argparse.Namespace, review: reviews.Review, policy: dict[
         return [{"provider": (explicit or independent)[0], "findings": findings}]
     grouped: dict[str, dict[str, set[str]]] = {}
     for finding_id, state in reviews.states(review, args.workflow).items():
+        finding = review.findings[finding_id]
+        if args.finding not in (None, finding_id):
+            continue
         if args.mission == "verify" and state in ("needs_verification", "needs_rejection_check"):
             allowed = reviews.FIX_OUTCOMES if state == "needs_verification" else reviews.REJECTION_OUTCOMES
             chosen = reviews.pending_providers(review, finding_id, state)
+        elif args.mission == "verify" and args.recheck and state in RECHECKABLE and finding.disposition != "open":
+            allowed = reviews.FIX_OUTCOMES if finding.disposition == "fixed" else reviews.REJECTION_OUTCOMES
+            chosen = reviews.raisers(review, finding_id)
         elif args.mission == "adjudicate" and state == "needs_adjudication":
             raised = reviews.raisers(review, finding_id)
             uninvolved = [p for p in [*standard, fallback] if p not in raised]
@@ -146,7 +153,7 @@ def _assignments(args: argparse.Namespace, review: reviews.Review, policy: dict[
             allowed, chosen = reviews.ADJUDICATION_OUTCOMES, {uninvolved[0]}
         else:
             continue
-        eligible = reviews.raisers(review, finding_id) | {fallback} if args.mission == "verify" else set(uninvolved)
+        eligible = reviews.raisers(review, finding_id) if args.mission == "verify" else set(uninvolved)
         if explicit and explicit[0] not in eligible:
             raise ScopeError(f"{explicit[0]} may not {args.mission} {finding_id}; eligible: {sorted(eligible)}")
         for provider in ([explicit[0]] if explicit else sorted(chosen)):
@@ -180,7 +187,8 @@ def _run_reviewer(args, root, epic, review, policy, out, assignment, name: str =
     provider = assignment["provider"]
     name = name or provider
     selected = policy["reviewers"]["refine" if args.workflow == "refine" else "audit"][provider]
-    row = {"provider": provider, "model": selected["model"], "effort": selected["effort"], "decision": None}
+    row = {"provider": provider, "model": selected["model"], "effort": selected["effort"], "decision": None,
+           "fallback_for": assignment.get("fallback_for")}
     problem = providers.preflight(provider, selected["model"], policy["timeouts_seconds"]["preflight"])
     if problem:
         return {**row, "status": "unavailable", "error": problem}
@@ -213,7 +221,7 @@ def _run_reviewer(args, root, epic, review, policy, out, assignment, name: str =
 
 
 def _review_with_retry(args, root, epic, review, policy, out, assignment) -> dict[str, Any]:
-    """Run one reviewer; in refinement and audit, retry a failed Claude or Codex reviewer before any fallback."""
+    """Run one reviewer; in refinement and audit, retry a failed Claude or Codex reviewer once."""
     row = _run_reviewer(args, root, epic, review, policy, out, assignment)
     standard = assignment["provider"] in policy["standard_reviewers"] and args.workflow in ("refine", "audit")
     retries = policy["standard_reviewer_retries"] if standard else 0
@@ -228,6 +236,8 @@ def _review_with_retry(args, root, epic, review, policy, out, assignment) -> dic
 
 def _round_lines(args, number: int, commit: str, rows: list[dict], size: dict | None) -> tuple[list[str], dict]:
     lines, resets = [f"## {args.workflow} {number} · {args.mission} · {now()}", f"- commit: {commit}"], {}
+    if args.replace:
+        lines.append(f"- replacement for {args.replace}, approved by: {' '.join(args.approved_by.split())}")
     for row in rows:
         suffix = f" · fallback for {row['fallback_for']}" if row.get("fallback_for") else ""
         lines.append(f"- reviewer {row['provider']} · {row['model']}/{row['effort']} · {row['status']} · "
@@ -262,6 +272,21 @@ def _round_lines(args, number: int, commit: str, rows: list[dict], size: dict | 
     return lines, resets
 
 
+def _replacement(args, review: reviews.Review, policy: dict[str, Any], assignments: list[dict]) -> list[dict]:
+    """The fallback takes over one standard reviewer's work, only with the user's recorded approval."""
+    fallback = policy["fallback_reviewer"]
+    if args.replace not in policy["standard_reviewers"] or not args.approved_by:
+        raise ScopeError("--replace names claude or codex and needs --approved-by with the user's approval")
+    replaced = [{**a, "provider": fallback, "fallback_for": args.replace} for a in assignments
+                if a["provider"] == args.replace]
+    if not replaced:
+        raise ScopeError(f"no {args.mission} work is assigned to {args.replace}")
+    if args.mission == "adjudicate" and any(fallback in reviews.raisers(review, key)
+                                            for a in replaced for key in a["findings"]):
+        raise ScopeError(f"{fallback} raised a finding under adjudication; it cannot replace {args.replace}")
+    return replaced
+
+
 def cmd_review(args: argparse.Namespace) -> None:
     if args.mission not in MISSIONS[args.workflow]:
         raise ScopeError(f"the {args.workflow} workflow has no {args.mission} mission")
@@ -269,7 +294,11 @@ def cmd_review(args: argparse.Namespace) -> None:
     epic = find_epic(root, args.epic)
     path = epic / "review.md"
     review = reviews.parse(path)
+    if args.recheck and args.mission != "verify":
+        raise ScopeError("--recheck applies to the verify mission")
     assignments = _assignments(args, review, policy)
+    if args.replace:
+        assignments = _replacement(args, review, policy, assignments)
     number = reviews.next_round(review, args.workflow)
     if args.workflow == "refine":
         commit_paths(root, [epic], f"refine({args.epic}): plan revision for review round {number}")
@@ -281,12 +310,6 @@ def cmd_review(args: argparse.Namespace) -> None:
     run_one = lambda assignment: _review_with_retry(args, root, epic, review, policy, out, assignment)  # noqa: E731
     with ThreadPoolExecutor(max_workers=len(assignments)) as pool:
         rows = list(pool.map(run_one, assignments))
-    fallback = policy["fallback_reviewer"]
-    failed = [i for i, row in enumerate(rows) if row["status"] != "completed"]
-    involved = {p for i in failed for key in assignments[i]["findings"] for p in reviews.raisers(review, key)}
-    if failed and fallback not in involved and all(row["provider"] != fallback for row in rows):
-        substitute = run_one({**assignments[failed[0]], "provider": fallback})
-        rows.append({**substitute, "fallback_for": rows[failed[0]]["provider"]})
     lines, resets = _round_lines(args, number, commit, rows, size)
     reviews.append(path, args.epic, lines, resets)
     commit_paths(root, [path], f"review({args.epic}): {args.workflow} round {number} {args.mission}")
@@ -325,6 +348,9 @@ def main() -> None:
         sub.add_argument("--epic", required=True)
         sub.add_argument("--root")
     review.add_argument("--providers")
+    review.add_argument("--recheck", action="store_true", help="verify: also re-send closed findings to their raiser")
+    review.add_argument("--replace", help="run the fallback in place of this standard reviewer (needs --approved-by)")
+    review.add_argument("--approved-by", help="the user's explicit approval of the replacement")
     commands.add_parser("preflight").add_argument("--providers")
     args = parser.parse_args()
     run_cli({"work": cmd_work, "review": cmd_review, "preflight": cmd_preflight}[args.command], args)

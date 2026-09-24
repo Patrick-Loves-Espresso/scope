@@ -55,7 +55,7 @@ fresh provider processes through Scope's launcher:
 - a **planner** writes the acceptance criteria and the plan;
 - an **implementer** writes the code, tests, and docs, and commits per story;
 - **reviewers** (Claude and Codex, read-only) review the plan and audit the
-  result; Muse Spark replaces an unavailable reviewer.
+  result; Muse Spark replaces an unavailable reviewer only with your approval.
 
 Workers run on the provider that hosts the command. Scope appends the
 simplicity-and-size rules to every worker and reviewer prompt: build the
@@ -236,7 +236,8 @@ state only.
   [Codex](https://developers.openai.com/codex) CLI, authenticated; both are
   needed for cross-provider review
 - [OpenCode](https://opencode.ai) with Muse Spark for the fallback reviewer
-  (optional; without it, an unavailable provider leaves the audit incomplete)
+  (optional; used only when you approve replacing an unavailable Claude or
+  Codex review)
 - Python 3 with the packages in `requirements.txt`
 - Git
 

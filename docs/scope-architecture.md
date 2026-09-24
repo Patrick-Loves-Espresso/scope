@@ -178,9 +178,10 @@ Claude and Codex audit the branch: the diff against the criteria, the plan and
 its decision log, the verification record and its logs, and the final docs
 against the code in both directions. They also flag over-engineering in the
 delivered code. The implementer fixes or rejects findings, the runner
-re-verifies, and the loop of section 7 continues until settled. If a provider
-is unavailable, Muse Spark replaces it; if two independent reviewers still
-cannot complete, the audit is incomplete and blocks Gate 2.
+re-verifies, and the loop of section 7 continues until settled. A failed
+Claude or Codex review is retried once; Muse Spark replaces it only when the
+user explicitly approves. Until two independent reviewers complete, the audit
+is incomplete and blocks Gate 2.
 
 ### 4.4 `/wrap_epic`
 
@@ -235,7 +236,10 @@ directory via `--add-dir` so they can commit); OpenCode runs `--pure --agent
 plan`; Antigravity runs `--sandbox`. Preflight checks each CLI's version,
 flags, authentication, or model catalog. Reviewers run in parallel; there is
 no all-provider barrier. In refinement and audit, a failed Claude or Codex
-review is retried once before the fallback replaces it. Reviewer output is
+review is retried once. The fallback never replaces Claude or Codex on its
+own: `--replace <provider> --approved-by "<the user's words>"` runs it in their
+place only with the user's explicit approval, recorded in the round. Reviewer
+output is
 parsed leniently about Markdown decoration and separators (`verified.`,
 `**R1.claude.1**`, `**DECISION:**`) and strictly about content: only assigned
 finding IDs and allowed outcome words count.
@@ -273,16 +277,20 @@ reviewers. Suggestions are optional and untracked.
   product choice, an accepted risk, or more resources, and otherwise blocks
   the epic. No finding is accepted because a budget ran out.
 - **Complete, fresh, settled.** A round succeeds when every reviewer in it
-  completed or was replaced by a completed fallback; failed rounds count for
-  nothing. A review is complete when two distinct providers completed the last
-  successful full round or a full round on the same content (a rerun of a
-  missing reviewer), fresh when nothing but evidence changed since the last
-  successful reviewing round, and settled when it is complete, fresh, and every
-  finding is closed. A finding's duplicates add their raisers, severity, and
+  completed or was replaced, with the user's approval, by a completed
+  fallback; failed rounds count for nothing. A review is complete when two
+  distinct providers completed full rounds on the content of the latest full
+  round (a rerun of a missing reviewer counts), fresh when nothing but evidence
+  changed since the last successful reviewing round, and settled when it is
+  complete, fresh, and every finding is closed. A finding's duplicates add their raisers, severity, and
   category to it; two failed verification rounds, not two reviewer answers,
   trigger a diagnosis. An explicit `--providers` choice cannot break these
-  rules: a verifier must have raised the finding (or be the fallback), and an
-  adjudicator or checker must be uninvolved.
+  rules: a verifier must have raised the finding, and an adjudicator or checker
+  must be uninvolved.
+- **Requested rounds.** A round the user asks for always runs, even when the
+  review is settled: a new full round, or `--mission verify --recheck`, which
+  re-sends closed findings to the reviewer that raised them (`still_open`
+  reopens a finding).
 
 ---
 

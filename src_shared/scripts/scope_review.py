@@ -206,14 +206,13 @@ def _unchanged(root: Path, epic: Path, workflow: str, base: str, head: str = "HE
 
 
 def coverage(review: Review, workflow: str, root: Path, epic: Path, standard: list[str]) -> dict[str, Any]:
-    """Which providers reviewed the current state: the last successful full round and the full rounds on
-    the same content; fresh when nothing but evidence changed since the last successful reviewing round."""
+    """Who reviewed the content of the latest full round (counting full rounds on the same content); fresh when
+    nothing but evidence changed since the last successful reviewing round."""
     rounds = [entry for entry in review.rounds if entry["workflow"] == workflow and entry["commit"]]
     skip = waived(review) if workflow == "audit" else set()
     good = [entry for entry in rounds if entry["mission"] in REVIEWING and _succeeded(entry, skip)]
     fulls = [entry for entry in rounds if entry["mission"] == "full"]
-    last = next((entry for entry in reversed(fulls) if _succeeded(entry, skip)), None)
-    same = [entry for entry in fulls if last and _unchanged(root, epic, workflow, entry["commit"], last["commit"])]
+    same = [entry for entry in fulls if _unchanged(root, epic, workflow, entry["commit"], fulls[-1]["commit"])]
     completed = {row["provider"] for entry in same for row in entry["reviewers"] if row["status"] == "completed"}
     replaced = {row["fallback_for"] for entry in same for row in entry["reviewers"] if row["status"] == "completed"}
     return {

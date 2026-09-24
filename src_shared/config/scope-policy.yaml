@@ -22,8 +22,8 @@ reviewers:
     opencode: {model: meta/muse-spark-1.3-contributor, effort: high}
     agy: {model: gemini-3.1-pro-high, effort: high}
 standard_reviewers: [claude, codex]
-fallback_reviewer: opencode   # Muse Spark (D10); Gemini (agy) only on request
-standard_reviewer_retries: 1  # a failed Claude or Codex review in refinement or audit is retried before the fallback
+fallback_reviewer: opencode   # Muse Spark (D10); replaces Claude or Codex only with the user's approval
+standard_reviewer_retries: 1  # a failed Claude or Codex review in refinement or audit is retried once
 
 timeouts_seconds:
   planner: 7200
