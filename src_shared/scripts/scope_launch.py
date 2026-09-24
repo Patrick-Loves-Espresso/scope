@@ -35,6 +35,7 @@ DECISIONS = {
 }
 REVIEW_MISSIONS = {"full", "verify", "adjudicate", "diagnose"}
 MISSIONS = {"refine": REVIEW_MISSIONS, "audit": REVIEW_MISSIONS, "implement": {"check"}}
+REPORTED = ("provider", "model", "status", "decision", "error", "duration_seconds", "fallback_for", "retried_after")
 CODEGRAPH = (
     "if `.codegraph/` exists and the `codegraph` CLI is installed, use its read-only queries "
     "(`explore`, `node`, `query`, `callers`, `callees`, `impact`, `affected`) before broad searches and "
@@ -175,27 +176,28 @@ def reviewer_prompt(args: argparse.Namespace, root: Path, epic: Path, review: re
     return "\n\n".join(parts) + "\n"
 
 
-def _run_reviewer(args, root, epic, review, policy, out, assignment) -> dict[str, Any]:
+def _run_reviewer(args, root, epic, review, policy, out, assignment, name: str = "") -> dict[str, Any]:
     provider = assignment["provider"]
+    name = name or provider
     selected = policy["reviewers"]["refine" if args.workflow == "refine" else "audit"][provider]
     row = {"provider": provider, "model": selected["model"], "effort": selected["effort"], "decision": None}
     problem = providers.preflight(provider, selected["model"], policy["timeouts_seconds"]["preflight"])
     if problem:
         return {**row, "status": "unavailable", "error": problem}
     prompt = reviewer_prompt(args, root, epic, review, assignment["findings"])
-    (out / f"prompt-{provider}.md").write_text(prompt, encoding="utf-8")
+    (out / f"prompt-{name}.md").write_text(prompt, encoding="utf-8")
     timeout = policy["timeouts_seconds"]["reviewer"]
     index = root / ".codegraph"  # a read-only Codex sandbox cannot open the CodeGraph database otherwise
     argv = providers.command(provider, model=selected["model"], effort=selected["effort"], root=root, write=False,
-                             output_path=out / f"review-{provider}.md", prompt=prompt, timeout=timeout,
+                             output_path=out / f"review-{name}.md", prompt=prompt, timeout=timeout,
                              read_only_commands=policy["reviewer_read_only_commands"],
                              add_dirs=[index] if provider == "codex" and index.is_dir() else [])
-    result = providers.run(argv, provider=provider, prompt=prompt, cwd=root, stdout_path=out / f"{provider}.stdout",
-                           stderr_path=out / f"{provider}.stderr", timeout=timeout)
-    text, _ = providers.final_message(provider, out / f"{provider}.stdout", out / f"review-{provider}.md")
+    result = providers.run(argv, provider=provider, prompt=prompt, cwd=root, stdout_path=out / f"{name}.stdout",
+                           stderr_path=out / f"{name}.stderr", timeout=timeout)
+    text, _ = providers.final_message(provider, out / f"{name}.stdout", out / f"review-{name}.md")
     row.update(duration_seconds=result["duration_seconds"], text=text)
     if result["timed_out"] or result["exit_code"] != 0 or not text.strip():
-        stderr = (out / f"{provider}.stderr").read_text(encoding="utf-8", errors="replace").strip()
+        stderr = (out / f"{name}.stderr").read_text(encoding="utf-8", errors="replace").strip()
         return {**row, "status": "timed_out" if result["timed_out"] else "failed", "error": stderr[-500:]}
     row["decision"] = reviews.decision(text)
     try:
@@ -210,12 +212,28 @@ def _run_reviewer(args, root, epic, review, policy, out, assignment) -> dict[str
     return {**row, "status": "completed"}
 
 
+def _review_with_retry(args, root, epic, review, policy, out, assignment) -> dict[str, Any]:
+    """Run one reviewer; in refinement and audit, retry a failed Claude or Codex reviewer before any fallback."""
+    row = _run_reviewer(args, root, epic, review, policy, out, assignment)
+    standard = assignment["provider"] in policy["standard_reviewers"] and args.workflow in ("refine", "audit")
+    retries = policy["standard_reviewer_retries"] if standard else 0
+    for attempt in range(1, retries + 1):
+        if row["status"] == "completed":
+            break
+        first = f"{row['status']}: {row.get('error') or ''}"
+        row = {**_run_reviewer(args, root, epic, review, policy, out, assignment,
+                               f"{assignment['provider']}-retry{attempt}"), "retried_after": first}
+    return row
+
+
 def _round_lines(args, number: int, commit: str, rows: list[dict], size: dict | None) -> tuple[list[str], dict]:
     lines, resets = [f"## {args.workflow} {number} · {args.mission} · {now()}", f"- commit: {commit}"], {}
     for row in rows:
         suffix = f" · fallback for {row['fallback_for']}" if row.get("fallback_for") else ""
         lines.append(f"- reviewer {row['provider']} · {row['model']}/{row['effort']} · {row['status']} · "
                      f"{row['decision'] or '-'}{suffix}")
+        if row.get("retried_after"):
+            lines.append(f"  - first attempt: {' '.join(row['retried_after'].split())[:300]}")
         if row.get("error"):
             lines.append(f"  - error: {' '.join(row['error'].split())[:300]}")
     if args.mission == "check":
@@ -260,7 +278,7 @@ def cmd_review(args: argparse.Namespace) -> None:
     commit = git(root, "rev-parse", "HEAD")
     size = scope_verify.size_report(root, epic, policy) if args.size else None
     out = run_dir(root, args.epic, f"{args.workflow}-{args.mission}")
-    run_one = lambda assignment: _run_reviewer(args, root, epic, review, policy, out, assignment)  # noqa: E731
+    run_one = lambda assignment: _review_with_retry(args, root, epic, review, policy, out, assignment)  # noqa: E731
     with ThreadPoolExecutor(max_workers=len(assignments)) as pool:
         rows = list(pool.map(run_one, assignments))
     fallback = policy["fallback_reviewer"]
@@ -276,8 +294,7 @@ def cmd_review(args: argparse.Namespace) -> None:
     emit({
         "workflow": args.workflow, "round": number, "mission": args.mission, "reviewed_commit": commit,
         "logs": str(out), "size": size,
-        "reviewers": [{key: row.get(key) for key in ("provider", "model", "status", "decision", "error",
-                                                     "duration_seconds", "fallback_for")} for row in rows],
+        "reviewers": [{key: row.get(key) for key in REPORTED} for row in rows],
         "summary": None if args.workflow == "implement" else reviews.summary(updated, args.workflow, root, epic),
     })
 

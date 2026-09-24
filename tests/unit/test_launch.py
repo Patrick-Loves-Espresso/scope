@@ -416,3 +416,28 @@ def test_explicit_providers_cannot_break_independence(planned, fake, monkeypatch
     assert review(planned, "refine", "adjudicate", "--providers", "opencode")["reviewers"][0]["provider"] == "opencode"
     blocked = review(planned, "implement", "check", "--context", "x", "--providers", "claude", expect=1)
     assert "other than the author" in blocked["error"]
+
+
+def test_a_failed_claude_or_codex_review_is_retried_once_before_the_fallback(planned, fake, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL_ONCE", "codex")
+    result = review(planned, "refine", "full")
+    assert rows(result) == [("claude", "completed", None), ("codex", "completed", None)]
+    assert result["reviewers"][1]["retried_after"].startswith("failed: transient provider error")
+    assert "  - first attempt: failed: transient provider error" in (planned / EPIC_DIR / "review.md").read_text()
+    assert [c["provider"] for c in calls(fake)].count("codex") == 2
+
+
+def test_the_fallback_and_implement_checks_are_not_retried(planned, fake, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL", "codex,opencode")
+    result = review(planned, "refine", "full")
+    assert [c["provider"] for c in calls(fake)].count("codex") == 2
+    assert [c["provider"] for c in calls(fake)].count("opencode") == 1
+    assert rows(result)[-1] == ("opencode", "failed", "codex")
+    monkeypatch.setenv("FAKE_FAIL_ONCE", "codex")
+    monkeypatch.setenv("FAKE_FAIL", "")
+    (fake / "failed-once-codex").unlink(missing_ok=True)
+    checked = review(planned, "implement", "check", "--context", "S1 grew")
+    assert [(row["provider"], row["status"]) for row in checked["reviewers"]] == [
+        ("codex", "failed"),
+        ("opencode", "completed"),
+    ]

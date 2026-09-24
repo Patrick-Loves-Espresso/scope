@@ -43,8 +43,9 @@ $PY "$S/scope_launch.py" review --host $HOST --workflow audit --mission full --e
 
 Both providers review the diff against the approved criteria, the plan and its
 decision log, the verification record and its logs, and the final docs against
-the code in both directions. An unavailable or failed provider is replaced by
-the configured fallback (Muse Spark). If fewer than two independent reviewers
+the code in both directions. A failed Claude or Codex review is retried once,
+then replaced by the configured fallback (Muse Spark). If fewer than two
+independent reviewers
 completed, rerun the missing one with `--providers <name>` or wait for the
 provider. The audit is then **incomplete**: never ask the user to accept a
 one-provider audit, and never count it as passed.

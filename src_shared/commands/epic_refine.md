@@ -85,8 +85,9 @@ renewed approval (step 2) before continuing.
 $PY "$S/scope_launch.py" review --host $HOST --workflow refine --mission full --epic $EPIC
 ```
 
-This runs Claude and Codex in parallel at high effort. An unavailable or
-failed reviewer is replaced by the fallback provider. If fewer than two
+This runs Claude and Codex in parallel at high effort. A failed Claude or
+Codex review is retried once, then replaced by the fallback provider. If
+fewer than two
 reviewers completed, rerun the missing one with `--providers <name>`; never
 substitute yourself.
 

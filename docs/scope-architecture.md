@@ -234,7 +234,11 @@ only read tools and read-only `git`/`codegraph` commands; Codex runs `exec
 directory via `--add-dir` so they can commit); OpenCode runs `--pure --agent
 plan`; Antigravity runs `--sandbox`. Preflight checks each CLI's version,
 flags, authentication, or model catalog. Reviewers run in parallel; there is
-no all-provider barrier.
+no all-provider barrier. In refinement and audit, a failed Claude or Codex
+review is retried once before the fallback replaces it. Reviewer output is
+parsed leniently about Markdown decoration and separators (`verified.`,
+`**R1.claude.1**`, `**DECISION:**`) and strictly about content: only assigned
+finding IDs and allowed outcome words count.
 
 The launcher appends `governance/simplicity-and-size.md` to every worker and
 reviewer prompt, so the rules reach the model without depending on it choosing

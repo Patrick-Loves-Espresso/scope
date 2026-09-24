@@ -234,6 +234,8 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 | U6 | Planners may prototype in a temporary directory outside the repository (user) | The dry-run planner measured its design that way; the repository stays untouched |
 | U7 | No detailed cost measurement in Scope; use `ccusage claude` and `ccusage codex` for testing and the pilot (user) | Reviewer CLIs do not report usage in the formats Scope reads |
 | U8 | No `max` effort anywhere: implementers (Claude, Codex), the Codex audit reviewer, and the Codex developer agent lowered to `xhigh` (user, 2026-09-23; supersedes U2 for Codex) | User decision |
+| U9 | In refinement and audit, a failed Claude or Codex review is retried once before the fallback (`standard_reviewer_retries: 1`); the fallback and `/implement` checks are not retried (user, 2026-09-24) | Claude and Codex are the reviewers that matter most |
+| L17 | Reviewer output parsing is lenient about Markdown decoration and separators, strict about IDs and outcome words | A pilot verification that confirmed all findings was rejected because it wrote `verified.` instead of `verified —` (user report, 2026-09-24) |
 | L1 | The implementer invokes the runner (`size` after each story, `run` at milestones); the orchestrator runs final verification | Only way to check per story inside one implementer job; numbers still come from the runner |
 | L2 | `/implement` executes `audit_epic.md` in-session, as today | Keeps user stops at the two gates |
 | L3 | Refinement commits (Gate 1, review rounds, final plan) land on the main checkout's current branch | Plan requires the Gate 1 commit; mirrors today's handoff commit |

@@ -289,3 +289,41 @@ def test_fallback_rows_and_waivers_are_parsed(tmp_path):
     assert reviews.waived(review) == {"codex"}
     assert reviews._succeeded(review.rounds[0], set())
     assert not reviews._succeeded({"reviewers": [rows[0]]}, set())
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "- R1.claude.1: verified — the fix holds",
+        "- R1.claude.1: verified. the fix holds",
+        "- R1.claude.1: verified: the fix holds",
+        "- R1.claude.1 – Verified – the fix holds",
+        "- **R1.claude.1**: `verified` — the fix holds",
+        "* R1.claude.1 verified, the fix holds",
+        "R1.claude.1: VERIFIED — the fix holds",
+    ],
+)
+def test_verdicts_tolerate_markdown_and_separators(line):
+    assert reviews.parse_outcomes(line, {"R1.claude.1": reviews.FIX_OUTCOMES}) == {
+        "R1.claude.1": ("verified", "the fix holds")
+    }
+
+
+def test_verdicts_stay_strict_about_ids_and_outcome_words():
+    allowed = {"R1.claude.1": reviews.FIX_OUTCOMES}
+    with pytest.raises(ValueError):
+        reviews.parse_outcomes("- R1.claude.10: verified — other finding", allowed)
+    with pytest.raises(ValueError):
+        reviews.parse_outcomes("- R1.claude.1: looks verified to me", allowed)
+    text = "- R1.claude.1: still_open — missing test\n- R1.claude.1: verified — later mention"
+    assert reviews.parse_outcomes(text, allowed)["R1.claude.1"][0] == "still_open"
+
+
+def test_decision_and_fields_tolerate_markdown():
+    assert reviews.decision("**DECISION:** Changes_Required\n") == "changes_required"
+    assert reviews.decision("## Decision: approve") == "approve"
+    text = ("## Findings\n\n### F1\n- **Severity**: Major.\n- **category:** `Security`\n- evidence: a\n"
+            "- **correction:** b\n- closure: c\n")
+    assert reviews.parse_findings(text) == [
+        {"severity": "major", "category": "security", "evidence": "a", "correction": "b", "closure": "c"}
+    ]

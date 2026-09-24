@@ -7,6 +7,7 @@ sample project. Environment knobs:
 - FAKE_STATE: directory for the call log (required)
 - FAKE_UNAVAILABLE: comma list of providers whose --version fails
 - FAKE_FAIL: comma list of providers that exit 2 on a job
+- FAKE_FAIL_ONCE: comma list of providers that exit 2 on their first job only
 - FAKE_HANG: comma list of providers that sleep on a job
 - FAKE_INVALID: comma list of providers that return malformed reviews
 - FAKE_REFINE_FINDER / FAKE_AUDIT_FINDER: provider raising the one major finding
@@ -234,6 +235,11 @@ def main() -> None:
         )
     if listed("FAKE_HANG"):
         time.sleep(60)
+    once = Path(os.environ["FAKE_STATE"], f"failed-once-{PROVIDER}")
+    if listed("FAKE_FAIL_ONCE") and not once.exists():
+        once.touch()
+        print("transient provider error", file=sys.stderr)
+        sys.exit(2)
     if listed("FAKE_FAIL"):
         print("provider crashed", file=sys.stderr)
         sys.exit(2)
