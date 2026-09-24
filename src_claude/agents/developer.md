@@ -1,7 +1,7 @@
 ---
 name: developer
 description: Implement production-ready code with tests, within the approved criteria and plan.
-# Claude-native implementation default; Codex has a platform-specific model configuration.
+# Claude-native implementation default; effort follows the session. Codex sets its own model and effort.
 model: claude-opus-5-5
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---

@@ -233,6 +233,7 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 | U5 | Planner effort `xhigh` for Claude and Codex (user, after the dry run) | Planner jobs at max took 4–9 min for a 21-line epic |
 | U6 | Planners may prototype in a temporary directory outside the repository (user) | The dry-run planner measured its design that way; the repository stays untouched |
 | U7 | No detailed cost measurement in Scope; use `ccusage claude` and `ccusage codex` for testing and the pilot (user) | Reviewer CLIs do not report usage in the formats Scope reads |
+| U8 | No `max` effort anywhere: implementers (Claude, Codex), the Codex audit reviewer, and the Codex developer agent lowered to `xhigh` (user, 2026-09-23; supersedes U2 for Codex) | User decision |
 | L1 | The implementer invokes the runner (`size` after each story, `run` at milestones); the orchestrator runs final verification | Only way to check per story inside one implementer job; numbers still come from the runner |
 | L2 | `/implement` executes `audit_epic.md` in-session, as today | Keeps user stops at the two gates |
 | L3 | Refinement commits (Gate 1, review rounds, final plan) land on the main checkout's current branch | Plan requires the Gate 1 commit; mirrors today's handoff commit |

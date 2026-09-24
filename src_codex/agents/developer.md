@@ -2,7 +2,7 @@
 name: developer
 description: Implement production-ready code with tests, within the approved criteria and plan.
 model: gpt-6-sol
-model_reasoning_effort: max
+model_reasoning_effort: xhigh
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
 
