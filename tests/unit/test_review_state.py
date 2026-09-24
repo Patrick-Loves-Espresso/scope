@@ -34,7 +34,7 @@ def outcome(fid: str, by: str, what: str) -> str:
 
 def parsed(tmp_path: Path, *parts: str) -> reviews.Review:
     path = tmp_path / "review.md"
-    path.write_text("# X: Review\n\n" + "\n".join(parts))
+    path.write_text("# X: Review\n\n" + "\n".join(parts), encoding="utf-8")
     return reviews.parse(path)
 
 
@@ -201,7 +201,7 @@ def test_append_reopens_findings_and_rejects_unknown_ids(tmp_path):
     path = tmp_path / "review.md"
     reviews.append(path, "X", [round_("refine", 1, "full", "claude"), finding("R1.claude.1", disposition="fixed — y")])
     reviews.append(path, "X", ["## refine 2 · verify · t"], {"R1.claude.1": "still_open by claude"})
-    assert "- disposition: open (reopened: still_open by claude)" in path.read_text()
+    assert "- disposition: open (reopened: still_open by claude)" in path.read_text(encoding="utf-8")
     assert reviews.parse(path).findings["R1.claude.1"].disposition == "open"
     with pytest.raises(ScopeError):
         reviews.append(path, "X", [], {"R1.claude.9": "x"})

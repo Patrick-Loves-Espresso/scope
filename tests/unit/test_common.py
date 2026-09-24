@@ -26,13 +26,13 @@ def test_find_epic_prefers_active_then_archived_and_rejects_ambiguity(tmp_path):
 )
 def test_scope_blocks_reject_bad_blocks(tmp_path, body, message):
     path = tmp_path / "plan.md"
-    path.write_text(f"# Plan\n\n```yaml scope\n{body}\n```\n")
+    path.write_text(f"# Plan\n\n```yaml scope\n{body}\n```\n", encoding="utf-8")
     with pytest.raises(ScopeError, match=message):
         scope_blocks(path)
 
 
 def test_scope_blocks_merge_and_ignore_plain_yaml(tmp_path):
     path = tmp_path / "plan.md"
-    path.write_text("```yaml scope\na: 1\n```\n\n```yaml\nb: 2\n```\n\n```yaml scope\nc: 3\n```\n")
+    path.write_text("```yaml scope\na: 1\n```\n\n```yaml\nb: 2\n```\n\n```yaml scope\nc: 3\n```\n", encoding="utf-8")
     assert scope_blocks(path) == {"a": 1, "c": 3}
     assert section("## A\n\nbody\n\n## B\n", "A") == "body" and section("## A\n", "C") is None
