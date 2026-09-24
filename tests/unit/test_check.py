@@ -186,6 +186,7 @@ def test_waiver_names_each_missing_review_and_is_never_a_pass(project, fake, mon
     monkeypatch.setenv("FAKE_AUDIT_FINDER", "nobody")
     audit_review(worktree)
     assert "audit incomplete" in " ".join(check(worktree, "gate2", expect=1)["problems"])
+    audit_review(worktree, "--replace", "claude", "--approved-by", "Test user")
     wrong = check(worktree, "waive", "--missing", "gemini", "--approver", "u", "--reason", "r", expect=1)
     assert "not a missing review" in wrong["error"]
     check(worktree, "waive", "--missing", "codex", "--approver", "Test user", "--reason", "providers down")
@@ -217,7 +218,8 @@ def test_a_failed_review_of_new_code_does_not_make_the_audit_fresh(audited, fake
     monkeypatch.setenv("FAKE_FAIL", "claude,codex,opencode")
     audit_review(audited)
     status = scope("scope_review.py", "status", "--epic", EPIC, "--workflow", "audit", cwd=audited)
-    assert status["complete"] and not status["fresh"] and not status["settled"]
+    assert not status["complete"] and not status["fresh"] and not status["settled"]
+    assert status["missing_reviews"] == ["claude", "codex"]
     assert "changed after the last audit review" in " ".join(check(audited, "gate2", expect=1)["problems"])
 
 

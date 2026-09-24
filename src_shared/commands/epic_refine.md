@@ -85,10 +85,12 @@ renewed approval (step 2) before continuing.
 $PY "$S/scope_launch.py" review --host $HOST --workflow refine --mission full --epic $EPIC
 ```
 
-This runs Claude and Codex in parallel at high effort. An unavailable or
-failed reviewer is replaced by the fallback provider. If fewer than two
-reviewers completed, rerun the missing one with `--providers <name>`; never
-substitute yourself.
+This runs Claude and Codex in parallel at high effort; a failed review is
+retried once. Never replace Claude or Codex on your own, and never substitute
+yourself. If one still fails, in any round, ask the user whether to rerun it
+later (`--providers <name>`) or let the fallback (Muse Spark) take its place;
+only on explicit approval rerun that round with
+`--replace <name> --approved-by "<the user's words>"`.
 
 ## 5. Resolve until settled
 
@@ -116,13 +118,17 @@ Act on the first that applies, then check status again:
 - `needs_verification` or `needs_rejection_check`:
   `review --workflow refine --mission verify`.
 - `needs_adjudication`: `review --workflow refine --mission adjudicate`.
-- Nothing pending but `complete: false`: rerun each provider in `missing_reviews` with
-  `--mission full --providers <name>`.
-- Nothing pending but `fresh: false`: the plan changed after the last review
-  round; run the full review again.
+- Nothing pending but not settled: rerun each provider in `missing_reviews`
+  as in step 4; if none is missing, the plan changed after the last round, so
+  run the full review again.
 
 Verification passes check only the named findings and add nothing new. No
 finding is accepted because a round budget ran out.
+
+**A round the user asks for always runs**, even when status is settled: a new
+review with `--mission full --providers <names>`, a re-verification with
+`--mission verify --recheck [--finding <id>] [--providers <name>]`. Report the
+review settled only after that round, once status is settled again.
 
 ## 6. Finish
 

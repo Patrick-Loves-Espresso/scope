@@ -52,37 +52,45 @@ def rows(result: dict) -> list[tuple]:
     return [(row["provider"], row["status"], row.get("fallback_for")) for row in result["reviewers"]]
 
 
-def test_unavailable_reviewer_is_replaced_by_the_fallback(planned, fake, monkeypatch):
+def test_a_reviewer_is_replaced_only_with_the_users_approval(planned, fake, monkeypatch):
     monkeypatch.setenv("FAKE_UNAVAILABLE", "codex")
     result = review(planned, "refine", "full")
-    assert rows(result) == [
-        ("claude", "completed", None),
-        ("codex", "unavailable", None),
-        ("opencode", "completed", "codex"),
-    ]
-    assert result["summary"]["complete"] and result["summary"]["providers_completed"] == ["claude", "opencode"]
+    assert rows(result) == [("claude", "completed", None), ("codex", "unavailable", None)]
+    assert not result["summary"]["complete"] and result["summary"]["missing_reviews"] == ["codex"]
+    assert "approved-by" in review(planned, "refine", "full", "--replace", "codex", expect=1)["error"]
+    assert (
+        "names claude or codex"
+        in review(planned, "refine", "full", "--replace", "agy", "--approved-by", "u", expect=1)["error"]
+    )
+    replaced = review(planned, "refine", "full", "--replace", "codex", "--approved-by", "Patrick, in chat")
+    assert rows(replaced) == [("opencode", "completed", "codex")]
+    assert replaced["summary"]["complete"] and replaced["summary"]["providers_completed"] == ["claude", "opencode"]
+    assert "- replacement for codex, approved by: Patrick, in chat" in (planned / EPIC_DIR / "review.md").read_text()
     opencode = next(c["args"] for c in calls(fake) if c["provider"] == "opencode")
     assert opencode[:4] == ["run", "--pure", "--agent", "plan"]
 
 
-def test_invalid_review_output_is_replaced_and_recorded(planned, fake, monkeypatch):
+def test_invalid_review_output_is_recorded(planned, fake, monkeypatch):
     monkeypatch.setenv("FAKE_INVALID", "codex")
     result = review(planned, "refine", "full")
     assert ("codex", "invalid_output", None) in rows(result)
     assert "error: missing or invalid DECISION line" in (planned / EPIC_DIR / "review.md").read_text()
 
 
-def test_audit_is_incomplete_when_the_fallback_covers_only_one_provider(planned, fake, monkeypatch):
+def test_one_approved_replacement_does_not_complete_a_review_missing_two_providers(planned, fake, monkeypatch):
     monkeypatch.setenv("FAKE_UNAVAILABLE", "claude,codex")
     result = review(planned, "refine", "full")
-    assert rows(result)[-1] == ("opencode", "completed", "claude")
-    assert not result["summary"]["complete"] and not result["summary"]["settled"]
+    assert [row[:2] for row in rows(result)] == [("claude", "unavailable"), ("codex", "unavailable")]
+    replaced = review(planned, "refine", "full", "--replace", "claude", "--approved-by", "Patrick")
+    assert rows(replaced)[-1] == ("opencode", "completed", "claude")
+    assert not replaced["summary"]["complete"] and replaced["summary"]["missing_reviews"] == ["codex"]
 
 
-def test_failed_and_timed_out_reviews_do_not_count(planned, fake, monkeypatch):
-    monkeypatch.setenv("FAKE_FAIL", "codex,opencode")
+def test_a_failed_review_is_recorded_and_not_replaced_automatically(planned, fake, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL", "codex")
     result = review(planned, "refine", "full")
-    assert ("codex", "failed", None) in rows(result) and ("opencode", "failed", "codex") in rows(result)
+    assert rows(result) == [("claude", "completed", None), ("codex", "failed", None)]
+    assert [c["provider"] for c in calls(fake)].count("opencode") == 0
     assert "provider crashed" in (planned / EPIC_DIR / "review.md").read_text()
 
 
@@ -128,6 +136,10 @@ def test_adjudicator_excludes_every_raiser(planned, fake):
         "## refine 2 · verify · t\n- R1.claude.1 · claude: maintained — still wrong\n"
     )
     write_review(planned, base)
+    assert (
+        "no adjudicate work is assigned to claude"
+        in review(planned, "refine", "adjudicate", "--replace", "claude", "--approved-by", "u", expect=1)["error"]
+    )
     assert review(planned, "refine", "adjudicate")["reviewers"][0]["provider"] == "opencode"
     write_review(
         planned,
@@ -135,6 +147,22 @@ def test_adjudicator_excludes_every_raiser(planned, fake):
         "- disposition: duplicate of R1.claude.1\n",
     )
     assert "every reviewer raised it" in review(planned, "refine", "adjudicate", expect=1)["error"]
+
+
+def test_a_raising_fallback_cannot_replace_an_adjudicator(planned, fake):
+    sha = git(planned, "rev-parse", "HEAD")
+    write_review(
+        planned,
+        f"## refine 1 · full · t\n- commit: {sha}\n- reviewer claude · m/high · completed · x\n"
+        "- reviewer opencode · m/high · completed · x\n\n"
+        "### R1.claude.1 · major · scope\n- evidence: e\n- correction: c\n- closure: x\n"
+        "- disposition: rejected — no\n\n"
+        "### R1.opencode.1 · major · scope\n- evidence: e\n- correction: c\n- closure: x\n"
+        "- disposition: duplicate of R1.claude.1\n\n"
+        "## refine 2 · verify · t\n- R1.claude.1 · claude: maintained — still wrong\n",
+    )
+    error = review(planned, "refine", "adjudicate", "--replace", "codex", "--approved-by", "u", expect=1)["error"]
+    assert "cannot replace codex" in error
 
 
 def test_check_records_size_and_diagnosis_records_an_outcome(planned, fake):
@@ -416,3 +444,52 @@ def test_explicit_providers_cannot_break_independence(planned, fake, monkeypatch
     assert review(planned, "refine", "adjudicate", "--providers", "opencode")["reviewers"][0]["provider"] == "opencode"
     blocked = review(planned, "implement", "check", "--context", "x", "--providers", "claude", expect=1)
     assert "other than the author" in blocked["error"]
+
+
+def test_a_failed_claude_or_codex_review_is_retried_once(planned, fake, monkeypatch):
+    monkeypatch.setenv("FAKE_FAIL_ONCE", "codex")
+    result = review(planned, "refine", "full")
+    assert rows(result) == [("claude", "completed", None), ("codex", "completed", None)]
+    assert result["reviewers"][1]["retried_after"].startswith("failed: transient provider error")
+    assert "  - first attempt: failed: transient provider error" in (planned / EPIC_DIR / "review.md").read_text()
+    assert [c["provider"] for c in calls(fake)].count("codex") == 2
+
+
+def test_implement_checks_are_not_retried_and_replacement_needs_approval(planned, fake, monkeypatch):
+    git(planned, "add", "-A")
+    git(planned, "commit", "-q", "-m", "plan")
+    monkeypatch.setenv("FAKE_FAIL_ONCE", "codex")
+    checked = review(planned, "implement", "check", "--context", "S1 grew")
+    assert [(row["provider"], row["status"]) for row in checked["reviewers"]] == [("codex", "failed")]
+    approved = review(
+        planned, "implement", "check", "--context", "S1 grew", "--replace", "codex", "--approved-by", "Patrick"
+    )
+    assert [(row["provider"], row["status"]) for row in approved["reviewers"]] == [("opencode", "completed")]
+
+
+def test_verification_by_a_replacement_is_credited_only_with_approval(planned, fake, monkeypatch):
+    review(planned, "refine", "full")
+    work(planned, task="Resolve the open findings in review.md.")
+    monkeypatch.setenv("FAKE_UNAVAILABLE", "claude")
+    failed = review(planned, "refine", "verify")
+    assert rows(failed) == [("claude", "unavailable", None)]
+    assert failed["summary"]["pending"] == {"needs_verification": ["R1.claude.1"]}
+    replaced = review(planned, "refine", "verify", "--replace", "claude", "--approved-by", "Patrick")
+    assert replaced["summary"]["settled"]
+    assert "- R1.claude.1 · claude: verified — [fallback opencode]" in (planned / EPIC_DIR / "review.md").read_text()
+
+
+def test_a_requested_recheck_resends_closed_findings_to_their_raiser(planned, fake, monkeypatch):
+    review(planned, "refine", "full")
+    work(planned, task="Resolve the open findings in review.md.")
+    assert review(planned, "refine", "verify")["summary"]["settled"]
+    assert "no findings need" in review(planned, "refine", "verify", expect=1)["error"]
+    assert "applies to the verify" in review(planned, "refine", "full", "--recheck", expect=1)["error"]
+    assert (
+        "no findings need" in review(planned, "refine", "verify", "--recheck", "--finding", "R1.x.9", expect=1)["error"]
+    )
+    confirmed = review(planned, "refine", "verify", "--recheck", "--finding", "R1.claude.1")
+    assert confirmed["reviewers"][0]["provider"] == "claude" and confirmed["summary"]["settled"]
+    monkeypatch.setenv("FAKE_VERIFY_OUTCOME", "still_open")
+    reopened = review(planned, "refine", "verify", "--recheck")
+    assert reopened["summary"]["pending"] == {"needs_disposition": ["R1.claude.1"]}

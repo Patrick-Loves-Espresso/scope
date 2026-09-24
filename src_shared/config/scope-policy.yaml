@@ -4,10 +4,10 @@
 workers:
   claude:
     planner: {model: claude-opus-5-5, effort: xhigh}
-    implementer: {model: claude-opus-5-5, effort: max}
+    implementer: {model: claude-opus-5-5, effort: xhigh}
   codex:
     planner: {model: gpt-6-astra, effort: xhigh}
-    implementer: {model: gpt-6-sol, effort: max}
+    implementer: {model: gpt-6-sol, effort: xhigh}
 
 # Independent reviewers. Refinement runs at high effort (plan §4.3).
 reviewers:
@@ -18,11 +18,12 @@ reviewers:
     agy: {model: gemini-3.1-pro-high, effort: high}
   audit:
     claude: {model: claude-opus-5-5, effort: xhigh}
-    codex: {model: gpt-6-astra, effort: max}
+    codex: {model: gpt-6-astra, effort: xhigh}
     opencode: {model: meta/muse-spark-1.3-contributor, effort: high}
     agy: {model: gemini-3.1-pro-high, effort: high}
 standard_reviewers: [claude, codex]
-fallback_reviewer: opencode   # Muse Spark (D10); Gemini (agy) only on request
+fallback_reviewer: opencode   # Muse Spark (D10); replaces Claude or Codex only with the user's approval
+standard_reviewer_retries: 1  # a failed Claude or Codex review in refinement or audit is retried once
 
 timeouts_seconds:
   planner: 7200

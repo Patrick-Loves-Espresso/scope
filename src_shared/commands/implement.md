@@ -70,10 +70,11 @@ context, external integrations, or uncertainty warrant it. Act on its status:
     --epic $EPIC --context "<the decision-log entry>" [--size]
   ```
 
-  `implementation_growth` or `approved`: launch a fresh implementer whose task
-  says so. `concerns`: launch a fresh implementer whose task carries the
-  concerns, then check again. `scope_growth`: ask the user to re-approve, cut,
-  or re-plan (see "Renewing Gate 1 on the branch").
+  If the check reviewer fails, ask the user as in `/audit_epic` step 1 before
+  any replacement. `implementation_growth` or `approved`: launch a fresh
+  implementer whose task says so. `concerns`: launch a fresh implementer whose
+  task carries the concerns, then check again. `scope_growth`: ask the user to
+  re-approve, cut, or re-plan (see "Renewing Gate 1 on the branch").
 - `needs_user`: ask the user every question at once; continue with a fresh
   implementer whose task carries the answers. An answer that changes the
   acceptance criteria goes through "Renewing Gate 1 on the branch".
@@ -108,7 +109,8 @@ it lists, then run it again.
 ## 3. Audit
 
 Execute the installed `audit_epic.md` in this session, from its Setup, with
-the same `EPIC`, `HOST`, and `S`. Do not start a second orchestrator.
+the same `EPIC`, `HOST`, and `S`. Do not start a second orchestrator. Rounds
+the user asks for run as that command describes.
 
 ## Final response
 

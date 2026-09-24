@@ -34,7 +34,9 @@ SIZE = re.compile(r"^- size: actual=(\d+) planned=(\d+)")
 FINDING = re.compile(r"^### ([RA]\d+\.[a-z]+\.\d+) · (\w+) · (\w+)\s*$")
 DISPOSITION = re.compile(r"^- disposition: (open|fixed|rejected|disproportionate|duplicate of (\S+))")
 OUTCOME = re.compile(r"^- ([RA]\d+\.[a-z]+\.\d+) · (\w+): (\w+) — (.*)$")
-FIELD = re.compile(r"^- (severity|category|evidence|correction|closure): (.*)$")
+# Reviewer output is parsed leniently about Markdown decoration and separators, strictly about content.
+FIELD = re.compile(r"^[-*]\s*[*_`]*(severity|category|evidence|correction|closure)[*_`]*\s*:[*_`]*\s*(.*)$", re.I)
+VERDICT_ID = re.compile(r"^[\s>#*_`-]*([RA]\d+\.[a-z]+\.\d+)(?!\d)[*_`]*(.*)$")
 HEADER = """# {epic}: Review
 
 Scope's runner appends reviewer rounds here. Authors edit a finding's
@@ -204,14 +206,13 @@ def _unchanged(root: Path, epic: Path, workflow: str, base: str, head: str = "HE
 
 
 def coverage(review: Review, workflow: str, root: Path, epic: Path, standard: list[str]) -> dict[str, Any]:
-    """Which providers reviewed the current state: the last successful full round and the full rounds on
-    the same content; fresh when nothing but evidence changed since the last successful reviewing round."""
+    """Who reviewed the content of the latest full round (counting full rounds on the same content); fresh when
+    nothing but evidence changed since the last successful reviewing round."""
     rounds = [entry for entry in review.rounds if entry["workflow"] == workflow and entry["commit"]]
     skip = waived(review) if workflow == "audit" else set()
     good = [entry for entry in rounds if entry["mission"] in REVIEWING and _succeeded(entry, skip)]
     fulls = [entry for entry in rounds if entry["mission"] == "full"]
-    last = next((entry for entry in reversed(fulls) if _succeeded(entry, skip)), None)
-    same = [entry for entry in fulls if last and _unchanged(root, epic, workflow, entry["commit"], last["commit"])]
+    same = [entry for entry in fulls if _unchanged(root, epic, workflow, entry["commit"], fulls[-1]["commit"])]
     completed = {row["provider"] for entry in same for row in entry["reviewers"] if row["status"] == "completed"}
     replaced = {row["fallback_for"] for entry in same for row in entry["reviewers"] if row["status"] == "completed"}
     return {
@@ -282,16 +283,18 @@ def parse_findings(text: str) -> list[dict[str, str]]:
         key = None
         for line in chunk.strip().splitlines():
             if match := FIELD.match(line.strip()):
-                key = match[1]
-                fields[key] = match[2].strip()
+                key = match[1].lower()
+                fields[key] = match[2].strip(" *_`")
             elif key and line.strip():
                 fields[key] += " " + line.strip()
-        if fields.get("severity") not in SEVERITIES:
+        fields["severity"] = fields.get("severity", "").lower().rstrip(".,;")
+        fields["category"] = fields.get("category", "").lower().rstrip(".,;")
+        if fields["severity"] not in SEVERITIES:
             raise ValueError(f"finding has invalid severity: {fields.get('severity')!r}")
         missing = [name for name in ("evidence", "correction", "closure") if not fields.get(name)]
         if missing:
             raise ValueError(f"finding lacks {', '.join(missing)}")
-        if fields.get("category") not in CATEGORIES:
+        if fields["category"] not in CATEGORIES:
             fields["category"] = "other"
         findings.append(fields)
     if not findings:
@@ -303,9 +306,13 @@ def parse_outcomes(text: str, allowed: dict[str, set[str]]) -> dict[str, tuple[s
     """Outcomes for exactly the assigned findings; anything else is ignored."""
     result = {}
     for line in text.splitlines():
-        match = re.match(r"^\s*-\s*([RA]\d+\.[a-z]+\.\d+):\s*(\w+)\s*[—-]+\s*(.*)$", line)
-        if match and match[1] in allowed and match[2] in allowed[match[1]]:
-            result[match[1]] = (match[2], match[3].strip())
+        match = VERDICT_ID.match(line.strip())
+        if not match or match[1] not in allowed or match[1] in result:
+            continue
+        words = "|".join(sorted(allowed[match[1]]))
+        verdict = re.match(rf"[\s:.,;—–-]*[*_`]*({words})\b[*_`]*[\s:.,;—–-]*(.*)$", match[2], re.I)
+        if verdict:
+            result[match[1]] = (verdict[1].lower(), verdict[2].strip())
     missing = sorted(set(allowed) - set(result))
     if missing:
         raise ValueError(f"no valid outcome for {', '.join(missing)}")
@@ -313,8 +320,8 @@ def parse_outcomes(text: str, allowed: dict[str, set[str]]) -> dict[str, tuple[s
 
 
 def decision(text: str) -> str | None:
-    match = re.search(r"^\s*DECISION:\s*(\w+)", text, re.MULTILINE)
-    return match[1] if match else None
+    match = re.search(r"^[\s>#*_`-]*DECISION[*_`\s]*:[*_`\s]*([A-Za-z_]+)", text, re.MULTILINE | re.IGNORECASE)
+    return match[1].lower() if match else None
 
 
 def cmd_status(args: argparse.Namespace) -> None:

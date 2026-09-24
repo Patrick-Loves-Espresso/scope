@@ -43,10 +43,13 @@ $PY "$S/scope_launch.py" review --host $HOST --workflow audit --mission full --e
 
 Both providers review the diff against the approved criteria, the plan and its
 decision log, the verification record and its logs, and the final docs against
-the code in both directions. An unavailable or failed provider is replaced by
-the configured fallback (Muse Spark). If fewer than two independent reviewers
-completed, rerun the missing one with `--providers <name>` or wait for the
-provider. The audit is then **incomplete**: never ask the user to accept a
+the code in both directions. A failed review is retried once. Never replace
+Claude or Codex on your own, and never substitute yourself. If one still
+fails, in any round, ask the user whether to wait and rerun it
+(`--providers <name>`) or let the fallback (Muse Spark) take its place; only
+on explicit approval rerun that round with
+`--replace <name> --approved-by "<the user's words>"`. Until two independent
+reviews complete, the audit is **incomplete**: never ask the user to accept a
 one-provider audit, and never count it as passed.
 
 ## 2. Fix, verify, adjudicate until settled
@@ -83,14 +86,17 @@ Act on the first that applies, then check status again:
 - `needs_verification` or `needs_rejection_check`:
   `review --workflow audit --mission verify`.
 - `needs_adjudication`: `review --workflow audit --mission adjudicate`.
-- Nothing pending but `complete: false`: rerun each provider in `missing_reviews` with
-  `--mission full --providers <name>`, or wait for the provider.
-- Nothing pending but `fresh: false`: the branch changed after the last review
-  round; run `scope_verify.py run --milestone remediation`, then the full
-  audit again.
+- Nothing pending but not settled: rerun each provider in `missing_reviews`
+  as in step 1; if none is missing, the branch changed after the last round,
+  so run `scope_verify.py run --milestone remediation`, then the full audit.
 
 Verification passes check only the named findings and add nothing new. A real
 defect is never accepted because a round budget ran out.
+
+**A round the user asks for always runs**, even when status is settled: a new
+audit with `--mission full --providers <names>`, a re-verification with
+`--mission verify --recheck [--finding <id>] [--providers <name>]`. Report the
+audit passed only after that round, once status is settled again.
 
 ## Result
 
