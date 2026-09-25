@@ -222,6 +222,38 @@ def test_preflight_command_reports_each_provider(fake, monkeypatch, tmp_path):
     assert result == {"claude": "ready", "codex": "codex --version failed", "opencode": "ready"}
 
 
+def test_a_cli_older_than_the_policy_minimum_is_refused(planned, fake, monkeypatch, tmp_path):
+    monkeypatch.setenv("FAKE_VERSION", "2.1.278")  # the policy requires claude 2.1.280; codex has no minimum
+    old = "claude CLI claude 2.1.278 is older than 2.1.280; update it"
+    assert scope("scope_launch.py", "preflight", cwd=tmp_path) == {"claude": old, "codex": "ready", "opencode": "ready"}
+    assert work(planned, expect=1)["error"] == old
+    result = review(planned, "refine", "full")
+    assert [row[:2] for row in rows(result)] == [("claude", "unavailable"), ("codex", "completed")]
+    assert result["summary"]["missing_reviews"] == ["claude"]
+    monkeypatch.setenv("FAKE_VERSION", "2.1.280")
+    assert work(planned)["status"] == "done"
+
+
+@pytest.mark.parametrize(
+    ("printed", "expected"),
+    [
+        ("2.1.1000 (Claude Code)", None),  # numeric, not string, comparison
+        ("2.1.280", None),
+        ("2.1.279 (Claude Code)", "claude CLI 2.1.279 (Claude Code) is older than 2.1.280; update it"),
+        ("", "claude CLI (no version printed) is older than 2.1.280; update it"),
+    ],
+)
+def test_preflight_compares_the_version_numerically(tmp_path, monkeypatch, printed, expected):
+    probe(
+        tmp_path,
+        monkeypatch,
+        "claude",
+        f'case "$1" in --version) echo "{printed}";; --help) echo --print --safe-mode --no-session-persistence '
+        '--permission-mode;; auth) echo "{\\"loggedIn\\": true}";; esac\n',
+    )
+    assert providers.preflight("claude", "m", 1, "2.1.280") == expected
+
+
 def probe(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, script: str) -> None:
     bin_dir = tmp_path / "probe-bin"
     bin_dir.mkdir(exist_ok=True)

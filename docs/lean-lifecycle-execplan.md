@@ -2,7 +2,8 @@
 
 This is a living plan. Keep Progress, Decision log, and Surprises current. A
 fresh session resumes by reading this file, `docs/scope-simplification-plan.md`
-(revision 7, the source of truth), and `git log main..lean-lifecycle`.
+(revision 7, the source of truth), and `git log` (the `lean-lifecycle` branch
+is merged into `main` and was deleted on 2026-09-24).
 
 ## Purpose
 
@@ -221,6 +222,10 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
   --check` clean, 126 passed / 0 failed / 0 errors / 0 skipped, 100% statement
   coverage, install smoke passes, budgets: Python 1,529 lines, largest module
   288 code lines, prompts 139/119/110/99 lines, one policy file
+- [x] 2026-09-24 Pilot SAG-113 (sagara) implemented, audited, and merged on
+  sagara `main` (`6ee973ae`, approved commit `30210a91`); see Surprises
+- [x] 2026-09-24 Pilot follow-ups (U12, U13) on branch `feat/pilot-followups`:
+  items 1, 2, 3, 5, 7, 8 implemented with tests; merged local branches deleted
 
 ## Decision log
 
@@ -238,6 +243,8 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 | L17 | Reviewer output parsing is lenient about Markdown decoration and separators, strict about IDs and outcome words | A pilot verification that confirmed all findings was rejected because it wrote `verified.` instead of `verified —` (user report, 2026-09-24) |
 | U10 | The fallback never replaces Claude or Codex automatically, in any mission; `--replace <provider> --approved-by` runs it in their place only with the user's explicit, recorded approval (user, 2026-09-24; amends D10 and supersedes L9) | A pilot showed OpenCode's automatic "verified" closing Claude's findings; the plan has the raiser verify |
 | U11 | A round the user asks for always runs, even when settled: a new full round, or `verify --recheck [--finding]`, which re-sends closed findings to their raiser; the restate-your-outcomes follow-up is not added (user, 2026-09-24) | User authority over review rounds; lenient parsing and one retry already cover formatting slips |
+| U12 | Pilot follow-ups (user, 2026-09-24): (1) plan.md logs one line per entry, command output and operational steps in working papers in the epic folder, plan length at Gate 2; (2) the planner records a baseline of the existing test, lint, and type commands before Gate 1, and pre-existing failures become one product question (fix in the epic, or leave out of validation with a reason); (3) `min_cli_versions` in the policy, checked by preflight (Claude Code ≥ 2.1.280); (5) optional `expected_paths` in plan.md; (7) stale `/prd_breakdown` lifecycle text fixed and the unused `orchestration` section dropped from `config_example.yaml` (supersedes L12 for `/prd_breakdown`); (8) `scope_check.py criteria` writes nothing | SAG-113: plan.md reached 2,148 lines; 76 unit failures already on main surfaced only at M1 and forced a Gate 1 renewal and an extra story; the dry run failed on Claude Code 2.1.278; config, requirements, and AGENTS.md changes showed as scope warnings |
+| U13 | Not taken now (user, 2026-09-24): (6) the `scope_check.py report` command, deferred under the regrowth guardrail (code only when a lesson recurs); (9) Windows `sh` for the runner stays the limitation stated in F12/L16; (4) `verify --recheck` for SAG-113 dropped because the epic is merged; reinstalling Scope in sagara follows once this work is on `main` | User choice; the recommendations were given with the options |
 | L18 | Completeness is judged on the content of the latest full round (all full rounds on that content count); freshness still needs a successful round | A partly failed round no longer lists the provider that completed as missing |
 | L1 | The implementer invokes the runner (`size` after each story, `run` at milestones); the orchestrator runs final verification | Only way to check per story inside one implementer job; numbers still come from the runner |
 | L2 | `/implement` executes `audit_epic.md` in-session, as today | Keeps user stops at the two gates |
@@ -254,6 +261,10 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 | L14 | `/sync_product` also resolves archived epics under `docs/epics/_implemented/` | `/wrap_epic` recommends it after the merge, when the epic is already archived |
 | L15 | Installer version 2.0.0 (both installers) | Breaking replacement of the lifecycle |
 | L16 | Windows CI runs the platform-independent unit tests instead of the retired worker-recovery test | The fake-provider lifecycle tests use POSIX shell wrappers |
+| L19 | The baseline lives in `acceptance-criteria.md` (section "Baseline"), not `plan.md`, and `scope_check.py` does not enforce it | The user must see it at Gate 1, before the plan exists; U12 item 2 is prompt and template only |
+| L20 | `preflight` takes an optional `minimum`; the version is the first dotted number in `--version` output, compared numerically; an unreadable version counts as older; only Claude has a minimum | Only Claude has evidence of a minimum (the dry run); no speculative minimums for the other CLIs |
+| L21 | The changed-criteria diff is a `difflib` unified diff of the approved blob against the current text (labels `approved`, `current`) | Without `hash-object -w` the current blob is not in the object store, so `git diff <blob> <blob>` cannot run |
+| L22 | Working papers are suggested as `notes/<story>.md` in the epic folder; nothing enforces the name | A concrete example helps agents; the destination rule (§4.7) already allows it |
 | L12 | Stale references to removed artifacts are fixed where they occur (`/audit_decisions`, `details.md` template, Codex docs); `/prd_breakdown` is left unchanged per plan | Removal consequence, not new design |
 
 ## Codex review #1 (design) dispositions
@@ -324,3 +335,13 @@ Suggestions taken: script paths quoted in prompts; commands run with `sh -c`
 - 2026-09-23 User review of the final report: merge approved; planner effort
   `xhigh` (U5); planner prototyping outside the repository allowed (U6);
   `ccusage` for cost measurement (U7); Claude Code ≥ 2.1.280 required.
+- 2026-09-24 The handoff brief said SAG-113 was waiting for Gate 2. It had
+  already been merged on sagara `main` (`6ee973ae`, 21:56 local, trailers
+  pinning `30210a91`, approver Patrick), and `/sync_product` ran at 22:04
+  (`f0934824`). The worktree is gone; the local branch `epic/SAG-113` remains.
+  A `verify --recheck` no longer applies.
+- 2026-09-24 SAG-113's plan.md (2,148 lines): Stories 511 (about 440 of them
+  "Story notes" that pre-specify implementation steps), Decision log 403,
+  Progress log 394, Approach 267, Validation 182. One story note told the
+  implementer to record commands and diffs in the progress log, which is where
+  the transcripts came from. U12 bounds the logs; story notes are not bounded.

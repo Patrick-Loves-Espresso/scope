@@ -502,7 +502,7 @@ into the product and architecture docs above. Templates are in
 
 ### acceptance-criteria.md
 **Template:** `templates-technical-arc42-c4/epic/acceptance-criteria.md`
-**Content:** Observable criteria under stable `AC-NNN` headings, including the error cases that matter; a `yaml scope` size estimate (production code lines, files, rationale); a "Not building" list; open product questions
+**Content:** Observable criteria under stable `AC-NNN` headings, including the error cases that matter; a `yaml scope` size estimate (production code lines, files, rationale); a "Not building" list; the baseline (existing test, lint, and type results, and failures that already exist); open product questions
 **Owner:** Planner; approved by the user at Gate 1
 
 ### approvals.yaml

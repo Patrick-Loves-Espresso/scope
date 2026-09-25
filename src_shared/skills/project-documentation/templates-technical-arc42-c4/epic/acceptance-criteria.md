@@ -27,6 +27,13 @@ result, with a measurable threshold where one applies].
 **Given** [invalid, unavailable, or failed condition] **when** [action] **then**
 [rejection, error, or recovery the user can observe].
 
+## Baseline
+
+[The commit checked, each existing test, lint, and type command run on it, and
+its result. The failures that already exist, or "None"; a long list goes into
+a working paper in the epic folder, linked here. Any command that could not
+run here, and why.]
+
 ## Open product questions
 
 None

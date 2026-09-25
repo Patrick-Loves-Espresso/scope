@@ -78,7 +78,8 @@ def cmd_work(args: argparse.Namespace) -> None:
     root, policy = repo_root(args.root), load_policy()
     epic = find_epic(root, args.epic)
     selected, timeouts = policy["workers"][args.host][args.role], policy["timeouts_seconds"]
-    problem = providers.preflight(args.host, selected["model"], timeouts["preflight"])
+    problem = providers.preflight(args.host, selected["model"], timeouts["preflight"],
+                                  policy["min_cli_versions"].get(args.host))
     if problem:
         raise ScopeError(problem)
     out = run_dir(root, args.epic, args.role)
@@ -189,7 +190,8 @@ def _run_reviewer(args, root, epic, review, policy, out, assignment, name: str =
     selected = policy["reviewers"]["refine" if args.workflow == "refine" else "audit"][provider]
     row = {"provider": provider, "model": selected["model"], "effort": selected["effort"], "decision": None,
            "fallback_for": assignment.get("fallback_for")}
-    problem = providers.preflight(provider, selected["model"], policy["timeouts_seconds"]["preflight"])
+    problem = providers.preflight(provider, selected["model"], policy["timeouts_seconds"]["preflight"],
+                                  policy["min_cli_versions"].get(provider))
     if problem:
         return {**row, "status": "unavailable", "error": problem}
     prompt = reviewer_prompt(args, root, epic, review, assignment["findings"])
@@ -326,8 +328,9 @@ def cmd_preflight(args: argparse.Namespace) -> None:
     policy = load_policy()
     default = [*policy["standard_reviewers"], policy["fallback_reviewer"]]
     names = args.providers.split(",") if args.providers else default
-    timeout = policy["timeouts_seconds"]["preflight"]
-    emit({name: providers.preflight(name, policy["reviewers"]["audit"][name]["model"], timeout) or "ready"
+    timeout, minimums = policy["timeouts_seconds"]["preflight"], policy["min_cli_versions"]
+    emit({name: providers.preflight(name, policy["reviewers"]["audit"][name]["model"], timeout,
+                                    minimums.get(name)) or "ready"
           for name in names})
 
 

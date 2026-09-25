@@ -248,7 +248,7 @@ create_page(
     | ... | ... | ... |
 
     ## Architecture Decision Records
-    ADRs for this product are documented per-epic during refinement.
+    ADRs are added per epic when `/implement` finalizes its documentation.
 
     ## Technical Specifications
     Technical specifications are maintained in `docs/architecture/13-specs/`:
@@ -257,7 +257,7 @@ create_page(
     - **Database**: `docs/architecture/13-specs/database/` - DDL and schema definitions
     - **Errors**: `docs/architecture/13-specs/errors/` - Error taxonomy and domain codes
 
-    Specifications are populated during epic refinement and consumed by Claude Flow for implementation.
+    Each epic's plan names the specifications it adds or changes; `/implement` updates them before the audit.
   """
 )
 ```
@@ -625,7 +625,7 @@ For each approved epic (in dependency order):
        ```
        /epic_refine {PREFIX}-001
        ```
-       to refine into stories and architecture.
+       to draft its acceptance criteria and plan.
      """
    )
    ```
@@ -639,12 +639,9 @@ For each approved epic (in dependency order):
 **Created in Phase 6:**
 - Epic Details (parent page) with tags: `epic`, `epic-details`, `{epic-id}`
 
-**Created during epic refinement (`/epic_refine`):**
-- Architecture (child) - tags: `epic`, `architecture`, `{epic-id}`
-- ADR (child) - tags: `epic`, `adr`, `{epic-id}`
-- PDR (child) - tags: `epic`, `pdr`, `{epic-id}`
-- Implementation Boundary Plan (child) - tags: `epic`, `implementation-boundary-plan`, `{epic-id}`
-- Implementation Summary (child) - tags: `epic`, `summary`, `{epic-id}`
+**Added to the epic folder later:**
+- `/epic_refine`: `acceptance-criteria.md` (approved at Gate 1), `approvals.yaml`, `plan.md`, `review.md`
+- `/implement`: `verification.yaml`; ADRs, arc42 sections, and specs are updated in `docs/architecture/`, and the epic folder is archived to `docs/epics/_implemented/`
 
 ### What Goes in Epic Details (Source of Truth)
 
@@ -655,13 +652,8 @@ For each approved epic (in dependency order):
 - Dependency rationale and analysis
 - Release phase justification
 
-**Added during refinement:**
-- Stories (child pages or links)
-- Architecture design (child page)
-- ADRs (child page)
-- PDRs (child page)
-- File plan (child page)
-- Implementation summary (child page, after completion)
+**Later stages** leave Epic Details unchanged; they write their own files next
+to it (above).
 
 ---
 
@@ -792,7 +784,7 @@ Created Epic Documentation Pages (source of truth):
 ✓ {PREFIX}-003: [Epic Title] - Epic Details (parent page)
 ... all [N] epic documentation pages
 
-Note: Child pages (Architecture, ADR, PDR, Implementation Boundary Plan) will be created during epic refinement.
+Note: /epic_refine adds the acceptance criteria and the plan to each epic folder.
 
 Created Tracking System Epics (tracking with links to documentation):
 
@@ -817,7 +809,7 @@ Updated Product Definition:
 Documentation Architecture:
   Documentation Backend (source of truth) ← Tracking System (tracking + link)
   {PREFIX}-001 Epic Details (parent) ← {PREFIX}-001 Epic Issue
-  └─ Child pages created during refinement
+  └─ acceptance-criteria.md and plan.md added by /epic_refine
 
 ⚠️ REMINDER: Focus on MVP epics first! Post-MVP features will wait until after v1.0 launch.
 

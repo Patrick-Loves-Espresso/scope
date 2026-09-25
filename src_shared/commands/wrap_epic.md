@@ -65,7 +65,7 @@ Show the summary exactly as printed:
 
 - the branch commit SHA to be merged;
 - the diffstat, production code lines and new modules against the plan's
-  estimate, and the concepts added (planned and actual);
+  estimate, the plan's length, and the concepts added (planned and actual);
 - the audit verdict, including rejected and adjudicated findings, accepted
   quality tradeoffs, and any waiver;
 - the verification summary;

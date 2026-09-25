@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
 
 import pytest
 
@@ -58,7 +59,10 @@ def test_changed_criteria_need_renewed_approval_with_diff_and_delta(project):
     )
     changed = check(project, "criteria", expect=3)["approval"]
     assert changed["status"] == "changed" and changed["delta"] == "2 → 3 criteria, estimate 12 → 40 LoC"
-    assert "+### AC-003" in changed["diff"]
+    assert "+### AC-003" in changed["diff"] and "-  production_loc: 12" in changed["diff"]
+    current = git(project, "hash-object", f"{EPIC_DIR}/acceptance-criteria.md")
+    written = subprocess.run(["git", "cat-file", "-e", current], cwd=project, capture_output=True)
+    assert written.returncode != 0, "the criteria check must not write the current blob to the object store"
 
 
 @pytest.mark.parametrize(

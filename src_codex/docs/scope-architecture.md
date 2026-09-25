@@ -147,9 +147,12 @@ orchestration; the scripts do the deterministic work.
 
 Runs in the main checkout. A planner job drafts `acceptance-criteria.md`;
 `scope_check.py criteria` checks its structure; product questions go to the
-user in one batch. At Gate 1 the user approves the criteria, the size
-estimate, and the "not building" list as shown; `scope_check.py approve`
-commits the file and records its git blob hash and commit in `approvals.yaml`.
+user in one batch. Before Gate 1 the planner runs the project's existing
+tests, lint, and type checks and records pre-existing failures under
+"Baseline"; whether to fix them is a product question. At Gate 1 the user
+approves the criteria, the size estimate, the "not building" list, and the
+baseline as shown; `scope_check.py approve` commits the file and records its
+git blob hash and commit in `approvals.yaml`.
 A planner job then writes `plan.md`, which `scope_check.py plan` checks. One
 full review by Claude and Codex follows, and the orchestrator loops on
 `scope_review.py status` (section 7) until the review is settled.
@@ -203,7 +206,7 @@ completed; it is a quality risk, never a pass.
 | File | Written by | Content |
 |---|---|---|
 | `details.md` | `/prd_breakdown` | Goal, scope, non-goals |
-| `acceptance-criteria.md` | Planner; approved by the user | `AC-NNN` criteria, size estimate, "not building", open questions |
+| `acceptance-criteria.md` | Planner; approved by the user | `AC-NNN` criteria, size estimate, "not building", baseline, open questions |
 | `approvals.yaml` | `scope_check.py approve` only | Blob hash and commit of the approved criteria, source, date |
 | `plan.md` | Planner, then implementer | ExecPlan: approach, milestones, stories, validation, criterion→test map, doc obligations, concepts, logs |
 | `review.md` | `scope_launch.py` (rounds), authors (dispositions) | All findings with dispositions, verification, adjudication, checks, user decisions |
@@ -233,9 +236,9 @@ only read tools and read-only `git`/`codegraph` commands; Codex runs `exec
 --ephemeral --ignore-user-config` with a `read-only` sandbox for reviewers and
 `workspace-write` for workers (implementers in a worktree also get the git
 directory via `--add-dir` so they can commit); OpenCode runs `--pure --agent
-plan`; Antigravity runs `--sandbox`. Preflight checks each CLI's version,
-flags, authentication, or model catalog. Reviewers run in parallel; there is
-no all-provider barrier. In refinement and audit, a failed Claude or Codex
+plan`; Antigravity runs `--sandbox`. Preflight checks each CLI's version
+(against `min_cli_versions` in the policy), flags, authentication, or model
+catalog. Reviewers run in parallel; there is no all-provider barrier. In refinement and audit, a failed Claude or Codex
 review is retried once. The fallback never replaces Claude or Codex on its
 own: `--replace <provider> --approved-by "<the user's words>"` runs it in their
 place only with the user's explicit approval, recorded in the round. Reviewer
@@ -248,7 +251,7 @@ The launcher appends `governance/simplicity-and-size.md` to every worker and
 reviewer prompt, so the rules reach the model without depending on it choosing
 to read them. `config/scope-policy.yaml` holds the model routing (workers per
 host provider, reviewers per workflow), the standard and fallback reviewers,
-timeouts, and the size limits.
+the minimum CLI versions, timeouts, and the size limits.
 
 ---
 

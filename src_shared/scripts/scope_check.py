@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from datetime import date
+import difflib
 from pathlib import Path
 from typing import Any
 
@@ -45,14 +46,15 @@ def check_criteria(root: Path, epic: Path) -> dict[str, Any]:
     record = epic / "approvals.yaml"
     if record.is_file():
         approved = yaml.safe_load(record.read_text(encoding="utf-8"))["acceptance_criteria"]
-        current = git(root, "hash-object", "-w", str(path))
+        current = git(root, "hash-object", str(path))  # no -w: the check writes nothing to the repository
         approval = {**approved, "status": "approved" if current == approved["blob"] else "changed"}
         if current != approved["blob"]:
             before = git(root, "cat-file", "-p", approved["blob"])
             before_loc = (scope_blocks(path, before).get("size_estimate") or {}).get("production_loc")
             approval["delta"] = (f"{len(CRITERION.findall(before))} → {len(ids)} criteria, estimate "
                                  f"{before_loc} → {estimate.get('production_loc')} LoC")
-            approval["diff"] = git(root, "diff", approved["blob"], current)
+            approval["diff"] = "\n".join(difflib.unified_diff(
+                before.splitlines(), text.splitlines(), "approved", "current", lineterm=""))
     return {
         "errors": errors, "criteria": ids, "size_estimate": estimate, "approval": approval,
         "open_questions": questions is not None and questions.strip().rstrip(".").lower() != "none",
@@ -148,7 +150,8 @@ def gate2(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]:
         f"{criteria['size_estimate'].get('files')} files)",
         f"- New production modules: {size['new_modules']}",
         f"- Modules over the limit: {[m['path'] for m in size['modules'] if m['over_limit'] or m['grew_over_limit']]}",
-        f"- Changes outside the planned paths: {size['scope_warnings']}", "",
+        f"- Changes outside the planned paths: {size['scope_warnings']}",
+        f"- plan.md: {len(plan_text.splitlines())} lines", "",
         "### Concepts (planned and actual)", "", section(plan_text, "Concepts") or "(missing)", "",
         "### Audit", "", f"- Verdict: {verdict}", f"- Reviewers completed: {audit['providers_completed']}",
         *(f"- {state.replace('_', ' ')}: {keys}" for state, keys in closed.items() if keys), "",

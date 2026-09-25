@@ -97,6 +97,8 @@ def wrap(root: Path, worktree: Path) -> None:
     assert gate["ready"], gate["problems"]
     assert gate["commit"] in gate["summary"] and "Verdict: passed" in gate["summary"]
     assert "(plan 12 LoC / 1 files; Gate 1 12 LoC / 1 files)" in gate["summary"]
+    plan_lines = len((worktree / ARCHIVED / "plan.md").read_text().splitlines())
+    assert f"- plan.md: {plan_lines} lines" in gate["summary"]
     merged = scope(
         "scope_check.py", "merge", "--epic", EPIC, "--commit", gate["commit"], "--approver", "Test user", cwd=worktree
     )

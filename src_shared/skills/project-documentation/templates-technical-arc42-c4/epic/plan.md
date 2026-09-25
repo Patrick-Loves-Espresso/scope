@@ -11,7 +11,9 @@ estimate:
   production_loc: 0        # sum of the story estimates
   files: 0
 production_paths: [src/]   # production code only; tests and docs excluded
-test_paths: [tests/]       # changes outside these paths and docs/ are reported
+test_paths: [tests/]
+expected_paths: []         # other planned changes (config, requirements); not counted
+# Changes outside these paths and docs/ are reported as scope warnings.
 ```
 
 ## Purpose
@@ -95,9 +97,16 @@ implementer before the audit): [what was added, and why any difference].
 
 ## Progress log
 
-- [date] [what was completed; commit]
+Each entry is one line. Command output, operational steps, and other evidence
+go into a working paper in the epic folder (for example `notes/S1.md`), linked
+from the entry.
+
+- [date] [story or event]: [what was completed]; [commit]
 
 ## Decision log
+
+Each entry is one line. A longer analysis goes into a working paper in the
+epic folder, linked from the entry.
 
 - [date] [decision] — [why]; [reversible or high-impact]
 
