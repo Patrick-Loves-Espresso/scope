@@ -184,6 +184,10 @@ def test_size_counts_added_code_lines_against_done_stories(planned, fake):
     size = scope("scope_verify.py", "size", "--epic", EPIC, cwd=worktree)
     assert (size["actual_loc"], size["planned_loc"], size["over"]) == (20, 6, True)
     assert size["new_modules"] == 1 and size["scope_warnings"] == ["README.md"]
+    set_plan(worktree, "test_paths: [tests/]", "test_paths: [tests/]\nexpected_paths: [README.md]")
+    git(worktree, "commit", "-q", "-am", "README.md is an expected change")
+    size = scope("scope_verify.py", "size", "--epic", EPIC, cwd=worktree)
+    assert size["scope_warnings"] == [] and size["actual_loc"] == 20
 
 
 def test_accepted_growth_rebaselines_the_size_check(planned, fake):

@@ -25,6 +25,10 @@ standard_reviewers: [claude, codex]
 fallback_reviewer: opencode   # Muse Spark (D10); replaces Claude or Codex only with the user's approval
 standard_reviewer_retries: 1  # a failed Claude or Codex review in refinement or audit is retried once
 
+# Preflight rejects an older CLI. Claude Code before 2.1.280 cannot run claude-opus-5-5.
+min_cli_versions:
+  claude: "2.1.280"
+
 timeouts_seconds:
   planner: 7200
   implementer: 14400

@@ -55,10 +55,10 @@ them at once, then run a fresh planner job whose task carries the answers.
 
 ## 2. Gate 1: the user approves the criteria
 
-Show the user the criteria, the size estimate with its rationale, and the "Not
-building" list. The user approves, edits, or cuts. Apply edits through a fresh
-planner job (task: the user's exact changes) and show the result again. Only
-on explicit approval of the content as shown:
+Show the user the criteria, the size estimate with its rationale, the "Not
+building" list, and the baseline. The user approves, edits, or cuts. Apply
+edits through a fresh planner job (task: the user's exact changes) and show
+the result again. Only on explicit approval of the content as shown:
 
 ```bash
 $PY "$S/scope_check.py" approve --epic $EPIC --source "<who approved, how, when>"

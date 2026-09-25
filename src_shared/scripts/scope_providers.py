@@ -33,14 +33,23 @@ def _capture(command: list[str], timeout: float) -> subprocess.CompletedProcess[
     return subprocess.run(command, capture_output=True, text=True, timeout=timeout)
 
 
-def preflight(provider: str, model: str, timeout: float) -> str | None:
+def _version(text: str) -> tuple[int, ...]:
+    found = re.search(r"\d+(?:\.\d+)+", text)
+    return tuple(int(part) for part in found[0].split(".")) if found else ()
+
+
+def preflight(provider: str, model: str, timeout: float, minimum: str | None = None) -> str | None:
     """Return why `provider` cannot run `model`, or None when it can."""
     executable = shutil.which(provider)
     if executable is None:
         return f"{provider} CLI not found on PATH"
     try:
-        if _capture([executable, "--version"], timeout).returncode != 0:
+        version = _capture([executable, "--version"], timeout)
+        if version.returncode != 0:
             return f"{provider} --version failed"
+        if minimum and _version(version.stdout) < _version(minimum):
+            found = version.stdout.strip() or "(no version printed)"
+            return f"{provider} CLI {found} is older than {minimum}; update it"
         if provider == "claude":
             help_text = _capture([executable, "--help"], timeout).stdout
             missing = [flag for flag in CLAUDE_FLAGS if flag not in help_text]

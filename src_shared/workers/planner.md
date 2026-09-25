@@ -27,6 +27,14 @@ below, then stop.
   approves.
 - A "Not building" list: things a reader might expect that are deliberately
   excluded.
+- A baseline: run the project's existing test, lint, and type commands (the
+  ones this epic's validation will use; see `AGENTS.md` or `CLAUDE.md`, CI, or
+  the Makefile) on the current code, never anything that deploys, migrates, or
+  changes external state. Write reports and logs outside the repository.
+  Record the commit, the commands, and their results under "Baseline". When
+  these commands already fail, ask one product question: fix the failures in
+  this epic (the size estimate includes the fix) or leave them out of
+  validation with a recorded reason.
 - Genuine product questions go under "Open product questions", all of them at
   once, each with the options and their consequences. Decide technical
   questions yourself.
@@ -40,8 +48,12 @@ below, then stop.
   and the criteria each story delivers. The story estimates sum to the plan
   estimate.
 - Validation commands that write JUnit XML with standard tooling, lint and type
-  checks, and a coverage check of new and changed code. Map every criterion to
-  the tests that prove it.
+  checks, and a coverage check of new and changed code. Handle the baseline's
+  failures as the user decided at Gate 1. Map every criterion to the tests that
+  prove it.
+- `production_paths` and `test_paths`, plus `expected_paths` for anything else
+  the epic changes on purpose (configuration, requirements, agent
+  instructions), so the runner reports only unplanned changes.
 - Documentation obligations: each durable doc change, its target file, and its
   owner story. Lasting decisions become ADRs; current behavior goes into the
   arc42 sections and `13-specs/`.
@@ -50,6 +62,9 @@ below, then stop.
   touches security, money, data integrity, or destructive actions.
 - Anything the plan does not pin down is the implementer's reversible choice.
   Do not pre-specify it.
+- Keep the plan lean: each progress-log and decision-log entry is one line.
+  Command output, operational steps, and long analyses go into working papers
+  in the epic folder; never ask the implementer to record them in the plan.
 
 ## Resolving findings
 

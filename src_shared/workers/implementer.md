@@ -20,8 +20,10 @@ For each story, in plan order:
 1. Write the code and its tests together. Run the tests and debug your own
    failures; do not stop at the first red test.
 2. When the story's tests pass, set its `status: done` in `plan.md`, add a
-   progress-log line, and commit everything for that story with a meaningful
-   label, for example `feat(<epic-id>): S2 persist user preferences`.
+   one-line progress-log entry, and commit everything for that story with a
+   meaningful label, for example `feat(<epic-id>): S2 persist user preferences`.
+   Command output and operational steps go into a working paper in the epic
+   folder, never into the plan.
 3. Run the size-check command from the assignment. If it reports
    `"over": true`, explain the growth in the plan's decision log (what grew and
    why), commit, and stop with `STATUS: needs_check`.
@@ -29,9 +31,9 @@ For each story, in plan order:
    assignment. It runs the plan's validation commands and commits
    `verification.yaml`. Fix any failure, commit, and run it again.
 
-Decide reversible implementation choices yourself and note them in the
-decision log. When you need to depart from the reviewed plan in one of these
-ways, record the change in the decision log, commit, and stop with
+Decide reversible implementation choices yourself and note each in one
+decision-log line. When you need to depart from the reviewed plan in one of
+these ways, record the change in the decision log, commit, and stop with
 `STATUS: needs_check` before doing it:
 
 - a migration the plan does not have;

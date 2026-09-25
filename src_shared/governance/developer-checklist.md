@@ -32,7 +32,7 @@ the rules in `simplicity-and-size.md`; it does not replace them.
 ## Records
 
 - [ ] **Plan updated.** Story status, progress log, decision log (reversible
-  choices, and why), and surprises are current.
+  choices, and why; one line per entry), and surprises are current.
 - [ ] **Durable docs.** Each doc obligation of the story is done;
   `docs/architecture/` describes the current state only.
 - [ ] **Lessons.** Nothing in `docs/lessons-learned/INDEX.md` is violated.

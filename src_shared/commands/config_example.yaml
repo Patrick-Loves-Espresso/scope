@@ -23,24 +23,3 @@ documentation:
   product-doc: atlassian             # Template format only; does not enable Confluence
   skill: project-documentation-file  # Local Markdown files; no Confluence connection
   docs_path: ./docs                   # Directory for documentation files
-
-# ============================================================================
-# ORCHESTRATION CONFIGURATION
-# ============================================================================
-
-orchestration:
-  usable_window: 160000                  # Max context usage (keeps ~20% of 200k window free)
-  min_available_default: 40000           # Default minimum tokens that must be available to resume
-  min_available_architect: 50000         # Architect needs more room for complex architectural work
-  min_available_product-owner: 20000     # Product owner needs less (simpler workflows)
-  # Add more agent-specific minimums as needed
-  # Format: min_available_{agent-name} where agent-name uses dashes
-
-# Decision logic:
-# - If agent doesn't exist: spawn new agent
-# - If context_usage > (usable_window - min_available): spawn new agent
-# - Else: resume existing agent
-#
-# Example: architect with context_usage=115k, min_available_architect=50k
-# - max_allowed = 160k - 50k = 110k
-# - 115k > 110k, so spawn new agent

@@ -201,7 +201,8 @@ your-project/
 ## Key Concepts
 
 **Two gates.** Gate 1: you approve the acceptance criteria, their size
-estimate, and what is deliberately not built; the approval is recorded by the
+estimate, what is deliberately not built, and what to do about tests that
+already fail (the planner runs them first); the approval is recorded by the
 content's git hash and commit, and any later change comes back to you as a
 diff with its size delta. Gate 2: you approve the exact branch commit, after
 seeing the diffstat against the estimate, the audit verdict, the verification
@@ -234,7 +235,8 @@ state only.
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or the
   [Codex](https://developers.openai.com/codex) CLI, authenticated; both are
-  needed for cross-provider review
+  needed for cross-provider review. Claude Code must be 2.1.280 or newer
+  (preflight checks it)
 - [OpenCode](https://opencode.ai) with Muse Spark for the fallback reviewer
   (optional; used only when you approve replacing an unavailable Claude or
   Codex review)

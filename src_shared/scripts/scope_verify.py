@@ -87,7 +87,7 @@ def size_report(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any
     base_actual, base_planned = _accepted_baseline(epic)
     over = actual - base_actual > limits["growth_threshold"] * (planned - base_planned)
     changed = git(root, "diff", "--name-only", base, "HEAD").splitlines()
-    expected = [*production, *tests, "docs/"]
+    expected = [*production, *tests, *(plan.get("expected_paths") or []), "docs/"]
     return {
         "actual_loc": actual, "planned_loc": planned, "ratio": round(actual / planned, 2) if planned else None,
         "threshold": limits["growth_threshold"], "accepted_baseline": [base_actual, base_planned], "over": over,

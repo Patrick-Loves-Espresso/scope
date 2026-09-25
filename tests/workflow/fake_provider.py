@@ -6,6 +6,7 @@ sample project. Environment knobs:
 
 - FAKE_STATE: directory for the call log (required)
 - FAKE_UNAVAILABLE: comma list of providers whose --version fails
+- FAKE_VERSION: version every fake prints (default 9.9.9)
 - FAKE_FAIL: comma list of providers that exit 2 on a job
 - FAKE_FAIL_ONCE: comma list of providers that exit 2 on their first job only
 - FAKE_HANG: comma list of providers that sleep on a job
@@ -206,7 +207,7 @@ def main() -> None:
     if ARGS == ["--version"]:
         if listed("FAKE_UNAVAILABLE"):
             sys.exit(1)
-        print(f"{PROVIDER} 9.9.9")
+        print(f"{PROVIDER} {os.environ.get('FAKE_VERSION', '9.9.9')}")
         return
     if ARGS == ["--help"]:
         print("--print --safe-mode --no-session-persistence --permission-mode")
