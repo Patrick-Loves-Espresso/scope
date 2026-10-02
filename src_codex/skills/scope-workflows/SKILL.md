@@ -51,8 +51,9 @@ running it; if it cannot run, report the parent command as blocked.
 The main Codex session is the only orchestrator and the only party that talks
 to the user. The lifecycle commands launch fresh processes through
 `scripts/scope_launch.py`: a planner and an implementer on the host provider,
-and independent read-only reviewers (Claude and Codex, with Muse Spark as the
-fallback). Never do a worker's or reviewer's job in the orchestrating session,
+and the read-only reviewers and adjudicator the user chose with
+`scope:reviewers` (Claude and Codex by default). Never do a worker's or
+reviewer's job in the orchestrating session,
 and never substitute Codex sub-agents for them. Scope's runner, not a model,
 executes the validation commands and writes `verification.yaml`.
 

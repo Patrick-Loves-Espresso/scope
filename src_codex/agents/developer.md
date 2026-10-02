@@ -1,7 +1,8 @@
 ---
 name: developer
 description: Implement production-ready code with tests, within the approved criteria and plan.
-model: gpt-6-sol
+# Codex has no alias for the latest Sol, so the model is pinned; the Claude copy uses the opus alias.
+model: gpt-6.1-sol
 model_reasoning_effort: xhigh
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---

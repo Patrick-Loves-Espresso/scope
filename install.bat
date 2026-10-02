@@ -182,6 +182,9 @@ call :copy_overlay "%SHARED_SRC%\commands" "%CLAUDE_DIR%\commands"
 if errorlevel 1 goto :install_failed
 call :copy_overlay "%CLAUDE_SRC%\commands" "%CLAUDE_DIR%\commands"
 if errorlevel 1 goto :install_failed
+rem Claude Code names the shared reviewers command /scope_reviewers
+move /Y "%CLAUDE_DIR%\commands\reviewers.md" "%CLAUDE_DIR%\commands\scope_reviewers.md" >nul
+if errorlevel 1 goto :install_failed
 call :copy_overlay "%SHARED_SRC%\scripts" "%CLAUDE_DIR%\scripts"
 if errorlevel 1 goto :install_failed
 call :copy_overlay "%CLAUDE_SRC%\scripts" "%CLAUDE_DIR%\scripts"

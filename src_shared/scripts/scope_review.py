@@ -9,7 +9,9 @@ from pathlib import Path
 import re
 from typing import Any
 
-from scope_common import ScopeError, commit_paths, emit, find_epic, git, load_policy, now, repo_root, run_cli
+from scope_common import (
+    ScopeError, commit_paths, emit, find_epic, git, load_policy, now, project_settings, repo_root, reviewer, run_cli,
+)
 
 SEVERITIES = ("blocking", "major", "minor")
 MAJOR = {"blocking", "major"}
@@ -24,19 +26,24 @@ ADJUDICATION_OUTCOMES = {"rejection_upheld", "finding_upheld", "product_scope"}
 REOPENING = {"still_open", "finding_upheld"}
 REVIEWING = {"full", "verify", "adjudicate"}
 EVIDENCE = {"review.md", "verification.yaml"}
-CLOSED = {"closed", "closed_unverified", "closed_rejected", "accepted_tradeoff", "duplicate"}
+CLOSED = {"closed", "closed_unverified", "closed_rejected", "accepted_tradeoff", "duplicate", "optional_minor"}
 PREFIX = {"refine": "R", "audit": "A"}
 
+NAME = r"[a-z][a-z0-9-]*"
+FINDING_ID = rf"[RA]\d+\.{NAME}\.\d+"
 ROUND = re.compile(r"^## (refine|implement|audit) (\d+) · (\w+) · (\S+)$")
-REVIEWER = re.compile(r"^- reviewer (\S+) · (\S+) · (\w+) · (\S+)(?: · fallback for (\w+))?")
+ROW = re.compile(rf"^- (reviewer|adjudicator) ({NAME}) · (\S+) · (\w+) · (\S+)(?: · (\d+)s)?(?: · (optional))?")
+REQUEST = re.compile(r"^## (refine|audit) reviewers · ")
+CHOSEN = re.compile(rf"^- (reviewer|adjudicator) {NAME} · (\w+) · (\S+) · (\S+)(?: · (mandatory|optional))?$")
+REPLACED = re.compile(rf"^- replaced ({NAME}) by ({NAME})$")
 COMMIT = re.compile(r"^- commit: ([0-9a-f]{40})$")
 SIZE = re.compile(r"^- size: actual=(\d+) planned=(\d+)")
-FINDING = re.compile(r"^### ([RA]\d+\.[a-z]+\.\d+) · (\w+) · (\w+)\s*$")
+FINDING = re.compile(rf"^### ({FINDING_ID}) · (\w+) · (\w+)\s*$")
 DISPOSITION = re.compile(r"^- disposition: (open|fixed|rejected|disproportionate|duplicate of (\S+))")
-OUTCOME = re.compile(r"^- ([RA]\d+\.[a-z]+\.\d+) · (\w+): (\w+) — (.*)$")
+OUTCOME = re.compile(rf"^- ({FINDING_ID}) · ({NAME}): (\w+) — (.*)$")
 # Reviewer output is parsed leniently about Markdown decoration and separators, strictly about content.
 FIELD = re.compile(r"^[-*]\s*[*_`]*(severity|category|evidence|correction|closure)[*_`]*\s*:[*_`]*\s*(.*)$", re.I)
-VERDICT_ID = re.compile(r"^[\s>#*_`-]*([RA]\d+\.[a-z]+\.\d+)(?!\d)[*_`]*(.*)$")
+VERDICT_ID = re.compile(rf"^[\s>#*_`-]*({FINDING_ID})(?!\d)[*_`]*(.*)$")
 HEADER = """# {epic}: Review
 
 Scope's runner appends reviewer rounds here. Authors edit a finding's
@@ -66,31 +73,52 @@ class Review:
     rounds: list[dict[str, Any]]
     findings: dict[str, Finding]
     waiver: list[str]
+    requests: dict[str, dict[str, Any]] = field(default_factory=dict)  # latest reviewer request per workflow
+
+
+def _request_line(request: dict[str, Any], line: str) -> None:
+    if match := CHOSEN.match(line):
+        entry = reviewer({"cli": match[2], "model": match[3], "effort": match[4], "optional": match[5] == "optional"},
+                         match[1])
+        if match[1] == "adjudicator":
+            request["adjudicator"] = entry
+        else:
+            request["reviewers"].append(entry)
+    elif match := REPLACED.match(line):
+        request["replaced"][match[1]] = match[2]
 
 
 def parse(path: Path) -> Review:
     rounds: list[dict[str, Any]] = []
     findings: dict[str, Finding] = {}
     waiver: list[str] = []
+    requests: dict[str, dict[str, Any]] = {}
     current: Finding | None = None
-    in_waiver = False
+    kind, request = None, {}
     text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8"), flags=re.DOTALL) if path.is_file() else ""
     for line in text.splitlines():
         if line.startswith("## "):
-            current, in_waiver = None, line.startswith("## audit waiver")
+            current, kind = None, "waiver" if line.startswith("## audit waiver") else None
             if match := ROUND.match(line):
+                kind = "round"
                 rounds.append({"workflow": match[1], "number": int(match[2]), "mission": match[3],
                                "reviewers": [], "commit": None, "size": None})
+            elif match := REQUEST.match(line):
+                kind = "request"
+                request = requests[match[1]] = {"reviewers": [], "adjudicator": None, "replaced": {}, "source": "epic"}
             continue
-        if in_waiver and line.startswith("- "):
+        if kind == "waiver" and line.startswith("- "):
             waiver.append(line[2:])
-        if rounds and current is None and (match := REVIEWER.match(line)):
-            rounds[-1]["reviewers"].append({"provider": match[1], "model": match[2], "status": match[3],
-                                            "decision": None if match[4] == "-" else match[4],
-                                            "fallback_for": match[5]})
-        elif rounds and current is None and (match := COMMIT.match(line)):
+        elif kind == "request":
+            _request_line(request, line)
+        elif kind == "round" and current is None and (match := ROW.match(line)):
+            rounds[-1]["reviewers"].append({"role": match[1], "name": match[2], "model": match[3], "status": match[4],
+                                            "decision": None if match[5] == "-" else match[5],
+                                            "seconds": int(match[6]) if match[6] else None,
+                                            "optional": bool(match[7])})
+        elif kind == "round" and current is None and (match := COMMIT.match(line)):
             rounds[-1]["commit"] = match[1]
-        elif rounds and current is None and (match := SIZE.match(line)):
+        elif kind == "round" and current is None and (match := SIZE.match(line)):
             rounds[-1]["size"] = (int(match[1]), int(match[2]))
         elif match := FINDING.match(line):
             current = findings[match[1]] = Finding(match[1], match[2], match[3])
@@ -105,11 +133,17 @@ def parse(path: Path) -> Review:
             if match := DISPOSITION.match(line):
                 current.disposition = "duplicate" if match[2] else match[1]
                 current.duplicate_of = match[2]
-    return Review(rounds, findings, waiver)
+    return Review(rounds, findings, waiver, requests)
+
+
+def settings(review: Review, workflow: str, root: Path, policy: dict[str, Any]) -> dict[str, Any]:
+    """This epic's latest reviewer request for the workflow, else the project's (`implement` uses audit's)."""
+    key = "refine" if workflow == "refine" else "audit"
+    return review.requests.get(key) or project_settings(root, policy)[key]
 
 
 def raisers(review: Review, finding_id: str) -> set[str]:
-    """The provider that raised a finding plus every provider whose finding duplicates it."""
+    """The reviewer that raised a finding plus every reviewer whose finding duplicates it."""
     return {review.findings[finding_id].raised_by} | {
         f.raised_by for f in review.findings.values() if f.duplicate_of == finding_id
     }
@@ -131,7 +165,7 @@ def _requirements(review: Review, finding: Finding) -> tuple[str, set[str]]:
     return next(s for s in SEVERITIES if any(f.severity == s for f in group)), {f.category for f in group}
 
 
-def _state(review: Review, finding: Finding, pass_needed: bool) -> str:
+def _state(review: Review, finding: Finding, pass_needed: bool, optional: set[str]) -> str:
     if finding.disposition == "duplicate":
         target = review.findings.get(finding.duplicate_of or "")
         return "duplicate" if target and target.disposition != "duplicate" else "needs_disposition"
@@ -146,6 +180,8 @@ def _state(review: Review, finding: Finding, pass_needed: bool) -> str:
     if ("product_decision" in categories and not user_decided) or disputed:
         return "needs_user"
     if finding.disposition == "open":
+        if severity == "minor" and raised <= optional:
+            return "optional_minor"  # U24: an optional reviewer's minor finding never blocks
         diagnosed = max((i for i, kind in enumerate(kinds) if kind == "diagnosis"), default=-1)
         if diagnosed >= 0 and "still_open" in kinds[diagnosed:]:
             return "blocked"
@@ -167,14 +203,16 @@ def _state(review: Review, finding: Finding, pass_needed: bool) -> str:
     return "needs_rejection_check" if checked or kinds or pass_needed else "accepted_tradeoff"
 
 
-def states(review: Review, workflow: str) -> dict[str, str]:
+def states(review: Review, workflow: str, optional: set[str] | None = None) -> dict[str, str]:
     scoped = [f for key, f in review.findings.items() if key.startswith(PREFIX[workflow])]
-    pass_needed = any(_state(review, f, False) in ("needs_verification", "needs_rejection_check") for f in scoped)
-    return {f.id: _state(review, f, pass_needed) for f in scoped}
+    optional = optional or set()
+    pass_needed = any(_state(review, f, False, optional) in ("needs_verification", "needs_rejection_check")
+                      for f in scoped)
+    return {f.id: _state(review, f, pass_needed, optional) for f in scoped}
 
 
 def pending_providers(review: Review, finding_id: str, state: str) -> set[str]:
-    """Raising providers that still have to verify a fix or check a rejection."""
+    """Raising reviewers that still have to verify a fix or check a rejection."""
     fixed = state == "needs_verification"
     closing, kinds = ("verified", FIX_OUTCOMES) if fixed else ("rejection_accepted", REJECTION_OUTCOMES)
     latest = _latest(_since_reopen(review.findings[finding_id].outcomes), kinds)
@@ -186,12 +224,11 @@ def waived(review: Review) -> set[str]:
     return {line.split(":", 1)[1].strip() for line in review.waiver if line.startswith("missing:")}
 
 
-def _succeeded(entry: dict[str, Any], waived_providers: set[str]) -> bool:
-    """Every reviewer in the round completed, was replaced by a completed fallback, or was waived."""
+def _succeeded(entry: dict[str, Any], waived_names: set[str]) -> bool:
+    """Every mandatory reviewer in the round completed or was waived; an optional reviewer may fail."""
     rows = entry["reviewers"]
-    covered = waived_providers | {row["fallback_for"] for row in rows if row["status"] == "completed"}
     return any(row["status"] == "completed" for row in rows) and all(
-        row["status"] == "completed" or row["provider"] in covered for row in rows)
+        row["status"] == "completed" or row["optional"] or row["name"] in waived_names for row in rows)
 
 
 def _unchanged(root: Path, epic: Path, workflow: str, base: str, head: str = "HEAD") -> bool:
@@ -205,7 +242,7 @@ def _unchanged(root: Path, epic: Path, workflow: str, base: str, head: str = "HE
     return all(Path(path).name in allowed and path.startswith("docs/epics/") for path in changed)
 
 
-def coverage(review: Review, workflow: str, root: Path, epic: Path, standard: list[str]) -> dict[str, Any]:
+def coverage(review: Review, workflow: str, root: Path, epic: Path, mandatory: list[str]) -> dict[str, Any]:
     """Who reviewed the content of the latest full round (counting full rounds on the same content); fresh when
     nothing but evidence changed since the last successful reviewing round."""
     rounds = [entry for entry in review.rounds if entry["workflow"] == workflow and entry["commit"]]
@@ -213,25 +250,31 @@ def coverage(review: Review, workflow: str, root: Path, epic: Path, standard: li
     good = [entry for entry in rounds if entry["mission"] in REVIEWING and _succeeded(entry, skip)]
     fulls = [entry for entry in rounds if entry["mission"] == "full"]
     same = [entry for entry in fulls if _unchanged(root, epic, workflow, entry["commit"], fulls[-1]["commit"])]
-    completed = {row["provider"] for entry in same for row in entry["reviewers"] if row["status"] == "completed"}
-    replaced = {row["fallback_for"] for entry in same for row in entry["reviewers"] if row["status"] == "completed"}
+    completed = {row["name"] for entry in same for row in entry["reviewers"]
+                 if row["status"] == "completed" and row["role"] == "reviewer"}
+    missing = [name for name in mandatory if name not in completed]
     return {
-        "providers_completed": sorted(completed),
-        "missing_reviews": [provider for provider in standard if provider not in completed | replaced],
-        "complete": len(completed) >= 2,
+        "reviewers_completed": sorted(completed),
+        "missing_reviews": missing,
+        "complete": bool(completed) and not missing,
         "fresh": bool(good) and _unchanged(root, epic, workflow, good[-1]["commit"]),
     }
 
 
 def summary(review: Review, workflow: str, root: Path, epic: Path) -> dict[str, Any]:
-    finding_states = states(review, workflow)
+    chosen = settings(review, workflow, root, load_policy())
+    finding_states = states(review, workflow, {r["name"] for r in chosen["reviewers"] if r["optional"]})
     pending: dict[str, list[str]] = {}
     for key, state in finding_states.items():
         if state not in CLOSED:
             pending.setdefault(state, []).append(key)
-    reviewed = coverage(review, workflow, root, epic, load_policy()["standard_reviewers"])
+    reviewed = coverage(review, workflow, root, epic, [r["name"] for r in chosen["reviewers"] if not r["optional"]])
+    shown = ("name", "cli", "model", "effort", "optional")
     return {
         "workflow": workflow,
+        "reviewers": [{key: entry[key] for key in shown} for entry in chosen["reviewers"]],
+        "adjudicator": chosen["adjudicator"] and {key: chosen["adjudicator"][key] for key in shown[:4]},
+        "reviewers_source": chosen["source"],
         **reviewed,
         "findings_closed": not pending,
         "settled": reviewed["complete"] and reviewed["fresh"] and not pending,

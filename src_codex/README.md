@@ -15,6 +15,7 @@ scope:epic_refine E1
 scope:implement E1
 scope:audit_epic E1
 scope:wrap_epic E1
+scope:reviewers
 scope:re_documentation
 scope:sync_product
 ```
@@ -42,8 +43,8 @@ missing and git-ignored) in the checkout or worktree they work in; workers and
 reviewers only query it.
 
 The launcher invokes the provider CLIs directly in headless mode: Codex
-(`codex exec`), Claude (`claude --print --safe-mode`), and, as the independent
-fallback reviewer, OpenCode with Muse Spark. Windows CI validates the installed
+(`codex exec`), Claude (`claude --print --safe-mode`), and OpenCode for
+reviewers or an adjudicator on other models. Windows CI validates the installed
 assets and the platform-independent unit tests; the lifecycle tests with fake
 provider CLIs run on macOS and Linux.
 
@@ -54,7 +55,7 @@ provider CLIs run on macOS and Linux.
 - `agents/` contains standalone Scope role definitions for work outside the lifecycle commands.
 - `skills/` contains reusable documentation and tracking skills.
 - `governance/` contains the simplicity-and-size rules appended to every worker and reviewer prompt, and the developer checklist.
-- `config/scope-policy.yaml` is Scope's single policy file (model routing, reviewers, fallback, timeouts, size limits).
+- `config/scope-policy.yaml` is Scope's single policy file (worker model routing, default reviewers, timeouts, size limits); a project's own reviewers and adjudicator live in `.scope/reviewers.yaml`, written by `scope:reviewers`.
 - `docs/` contains Scope reference documentation.
 
 ## Differences From Claude Code

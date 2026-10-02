@@ -27,11 +27,12 @@ for genuine product decisions.
 - **`/prd_create`** — Interview the user to create a lightweight first-pass PRD before refinement
 - **`/prd_refine`** — Interactively refine a product requirements document using a checklist-driven approach
 - **`/prd_breakdown`** — Break the PRD into implementable epics with architecture and dependency analysis
-- **`/epic_refine`** — Draft observable acceptance criteria with a size estimate and a "not building" list for your approval, write a living plan, and settle one review by Claude and Codex
+- **`/epic_refine`** — Draft observable acceptance criteria with a size estimate and a "not building" list for your approval, write a living plan, and settle one review by your reviewers
 - **`/implement`** — Build the plan in a git worktree with one implementer that commits per story, runner-executed tests, a size check after each story, finalized docs, and the independent audit
-- **`/audit_epic`** — Two independent providers audit the branch, including docs against code; findings are fixed and verified, or rejected and adjudicated
+- **`/audit_epic`** — Your reviewers audit the branch independently, including docs against code; findings are fixed and verified, or rejected and adjudicated
 - **`/wrap_epic`** — Show the exact commit for your approval and merge exactly that commit, with the approval recorded in the merge commit
 - **`/sync_product`** — Update product documentation when implementation reveals scope changes
+- **`/scope_reviewers`** / **`scope:reviewers`** — Choose the reviewers (Claude, Codex, or OpenCode models; mandatory or optional) and the adjudicator for refinement and audit, with a preflight of each ([details](#choosing-reviewers))
 
 ### Reverse Engineering (Code to Docs)
 
@@ -54,8 +55,12 @@ fresh provider processes through Scope's launcher:
 
 - a **planner** writes the acceptance criteria and the plan;
 - an **implementer** writes the code, tests, and docs, and commits per story;
-- **reviewers** (Claude and Codex, read-only) review the plan and audit the
-  result; Muse Spark replaces an unavailable reviewer only with your approval.
+- **reviewers** (read-only; Claude and Codex by default, plus any OpenCode
+  model you add) review the plan and audit the result, and an **adjudicator**
+  you choose settles disputed rejections. `/scope_reviewers` sets them for the
+  project; a lifecycle command can change them for one epic. Each review ends
+  with metrics per reviewer: time, findings by severity (unique ones in
+  parentheses), fixed and rejected.
 
 Workers run on the provider that hosts the command. Scope appends the
 simplicity-and-size rules to every worker and reviewer prompt: build the
@@ -149,11 +154,17 @@ lifecycle files. An epic in progress on the old version is re-planned: run
 criteria for your approval, and writes a new plan. What happens to code
 already produced under the old version is your decision.
 
+**Upgrading to configurable reviewers.** Reviewers are no longer fixed to
+Claude and Codex with a Muse Spark fallback. After reinstalling, run
+`/scope_reviewers` once to choose an adjudicator; `/epic_refine` and
+`/audit_epic` stop until one is set (see [Choosing Reviewers](#choosing-reviewers)).
+
 ## Quick Start
 
 **Starting from an idea or a PRD:**
 
 ```
+0. /scope_reviewers         → Once per project: check the reviewers and choose an adjudicator
 1. /prd_create              → Create a first-pass PRD if you do not have one
 2. /prd_refine              → Refine it interactively
 3. /prd_breakdown           → Get epics with dependencies
@@ -171,6 +182,71 @@ already produced under the old version is your decision.
 4. Continue as above
 ```
 
+## Choosing Reviewers
+
+`/scope_reviewers` (Codex: `scope:reviewers`) chooses who reviews your epics.
+It is the only command that changes the project's reviewers; their settings
+live in `.scope/reviewers.yaml`, which reinstalling Scope never touches.
+Commit the file if everyone on the project should share it.
+
+There are two sets: `refine`, used by `/epic_refine`, and `audit`, used by
+`/audit_epic` and by the checks inside `/implement`. Each set has:
+
+- **reviewers**: a CLI (`claude`, `codex`, or `opencode`), the exact model
+  string that CLI takes, and an effort. Every reviewer is **mandatory** unless
+  you mark it **optional**. A review counts only when every mandatory reviewer
+  completed it, and a failed one is retried once. An optional reviewer is not
+  retried and never blocks; its blocking and major findings must still be
+  resolved, its minor ones never block.
+- **one adjudicator**, which settles every rejected finding that its reviewer
+  maintains. Scope assumes no model for it: until you choose one,
+  `/epic_refine` and `/audit_epic` stop and ask you to.
+
+Without your own choice, the defaults are Claude (`opus`) and Codex
+(`gpt-6.1-sol`), at `high` effort for refinement and `xhigh` for the audit.
+Claude's `opus` and `sonnet` are aliases that follow the latest model of the
+family; Codex models are pinned. OpenCode models are written as
+`provider/model`, exactly as OpenCode takes them. Scope never guesses a model
+name: if yours is not exact, the command asks.
+
+```
+/scope_reviewers                                          → show reviewers, adjudicator, preflight
+/scope_reviewers set the adjudicator to claude sonnet xhigh
+/scope_reviewers add opencode zai/glm-5.3 high as an optional reviewer
+/scope_reviewers for the audit, replace codex with opencode moonshot/kimi-v3 xhigh
+```
+
+Without a qualifier a change applies to both sets; "architecture" or
+"refine" means only `refine`, and "implementation", "qa", or "audit" means
+only `audit`. Saving preflights every reviewer and warns about an unavailable
+CLI or model, a single reviewer (no second opinion), or an adjudicator with
+the same model and effort as a reviewer (it would judge findings its own model
+raised). `max` effort is used only when you ask for it.
+
+**For one epic only**, add the request to a lifecycle command; it is recorded
+with your words in the epic's `review.md`, and added reviewers are mandatory:
+
+```
+/epic_refine EPIC-002 add opencode zai/glm-5.3 high as a reviewer
+/implement EPIC-002 and replace codex with opencode moonshot/kimi-v3 xhigh
+```
+
+A replaced reviewer's open findings are verified by its replacement.
+
+**Metrics.** `/epic_refine` and `/audit_epic` end with a table per reviewer:
+model and effort, runs (failed ones noted), time, findings by severity as
+`total (unique)`, where unique means no other reviewer raised it, and how many
+were fixed or rejected; then the adjudicator's runs and the findings it
+judged. To add up every epic, run
+`python3 .claude/scripts/scope_reviewers.py metrics --all`
+(Codex: `plugins/scope/scripts/`).
+
+```
+| Reviewer    | Model/effort     | Runs | Time    | Blocking | Major | Minor | Fixed | Rejected |
+| opus        | opus/xhigh       | 3    | 21m 40s | 0 (0)    | 4 (2) | 3 (3) | 6     | 1        |
+| gpt-6-1-sol | gpt-6.1-sol/xhigh | 3   | 18m 05s | 1 (1)    | 3 (1) | 1 (1) | 4     | 1        |
+```
+
 ## Project Structure (Target Project)
 
 ```
@@ -186,7 +262,8 @@ your-project/
 ├── plugins/
 │   └── scope/              # Codex plugin with the same layout plus docs/ and .codex-plugin/
 ├── .scope/
-│   └── config.yaml         # Project configuration
+│   ├── config.yaml         # Project configuration
+│   └── reviewers.yaml      # Reviewers and adjudicator (/scope_reviewers; never overwritten)
 ├── docs/
 │   ├── product/            # Product docs (strategy, definition, decisions)
 │   ├── architecture/       # Current-state technical docs (Arc42 01-13, ADRs, specs)
@@ -215,10 +292,10 @@ and only scope growth comes to you.
 
 **Independent review with adjudication.** Findings are fixed or rejected with a
 reason. The reviewer who raised a finding verifies the fix; a rejected finding
-goes back to that reviewer and, if maintained, to the other provider, which
+goes back to that reviewer and, if maintained, to the adjudicator, which
 examines it from scratch. A finding that survives two fixes gets an
-independent diagnosis. No finding is accepted because a budget ran out, and a
-one-provider audit never passes.
+independent diagnosis. No finding is accepted because a budget ran out, and an
+audit missing a mandatory reviewer never passes.
 
 **Runner verification.** The plan declares its validation commands; Scope runs
 them on a committed state, reads standard JUnit XML (pytest `--junitxml`,
@@ -234,12 +311,12 @@ state only.
 ## Requirements
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or the
-  [Codex](https://developers.openai.com/codex) CLI, authenticated; both are
-  needed for cross-provider review. Claude Code must be 2.1.280 or newer
-  (preflight checks it)
-- [OpenCode](https://opencode.ai) with Muse Spark for the fallback reviewer
-  (optional; used only when you approve replacing an unavailable Claude or
-  Codex review)
+  [Codex](https://developers.openai.com/codex) CLI, authenticated; Scope uses
+  the reviewers you choose with `/scope_reviewers` (Claude and Codex by
+  default). Claude Code must be 2.1.280 or newer (preflight checks it)
+- [OpenCode](https://opencode.ai) for reviewers or an adjudicator on other
+  models (optional; each run gets a private data directory, so parallel runs
+  do not collide)
 - Python 3 with the packages in `requirements.txt`
 - Git
 

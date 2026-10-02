@@ -58,9 +58,9 @@ blocks tagged `yaml scope`; everything else is prose.
   --output-last-message -`; implementers in a linked worktree also get
   `--add-dir <git common dir>` so they can commit, and `--add-dir` for the
   run-log directory.
-- OpenCode (Muse Spark fallback): `run --pure --agent plan --model --variant
-  --dir <root> <prompt>`. Antigravity (Gemini on request): `--model --sandbox
-  --print-timeout --print <prompt>`.
+- OpenCode (any `provider/model` the user chooses, U14): `run --pure --agent
+  plan --model --variant --dir <root> <prompt>`, with a private data directory
+  per run (U20). Antigravity was dropped with U14 (L34).
 
 ### Script interfaces (all print JSON; `--root` defaults to the current git top level)
 
@@ -68,8 +68,13 @@ blocks tagged `yaml scope`; everything else is prose.
 scope_launch.py work    --host claude|codex --role planner|implementer --epic E --task TEXT
 scope_launch.py review  --host H --workflow refine|implement|audit
                         --mission full|verify|adjudicate|check|diagnose --epic E
-                        [--finding ID] [--context TEXT] [--size] [--providers a,b]
-scope_launch.py preflight [--providers a,b]
+                        [--finding ID] [--context TEXT] [--size] [--reviewers a,b] [--recheck]
+scope_reviewers.py show [--epic E] [--preflight]
+scope_reviewers.py set  --workflow refine|audit|both <changes> [--allow-max]
+scope_reviewers.py epic --epic E --workflow refine|audit <changes> --requested TEXT [--allow-max]
+                        changes: --add|--add-optional CLI MODEL EFFORT, --remove NAME,
+                        --replace NAME CLI MODEL EFFORT, --adjudicator CLI MODEL EFFORT
+scope_reviewers.py metrics --epic E --workflow refine|audit | --all
 scope_review.py status  --epic E --workflow refine|audit
 scope_review.py decide  --epic E --finding ID --outcome finding_upheld|rejection_upheld --note TEXT
 scope_check.py  criteria|plan|gate2 --epic E
@@ -87,6 +92,10 @@ verification record`, `audit(E): record audit waiver`, `merge(E): ...` with
 trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 
 ### `review.md` rules
+
+Reviewer selection, replacement, adjudication, and completeness as amended by
+U14–U25 are summarized under "Configurable reviewers" below; the bullets here
+keep the original wording where it still holds.
 
 - Round header `## <workflow> <n> · <mission> · <timestamp>`, then
   `- commit: <sha>` (the reviewed commit; refinement rounds first commit the
@@ -226,6 +235,153 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
   sagara `main` (`6ee973ae`, approved commit `30210a91`); see Surprises
 - [x] 2026-09-24 Pilot follow-ups (U12, U13) on branch `feat/pilot-followups`:
   items 1, 2, 3, 5, 7, 8 implemented with tests; merged local branches deleted
+- [x] 2026-10-02 Configurable reviewers (U14–U25, L23–L36) on branch
+  `feat/reviewer-selection`: `scope_reviewers.py`, `/scope_reviewers`
+  (Codex `scope:reviewers`), per-epic requests, adjudicator, OpenCode
+  isolation, metrics, Gate 2 reviewer lines; tests and docs updated
+- [x] 2026-10-02 Codex models switched to `gpt-6.1-sol` (U26); not yet run
+  with the real Codex CLI
+- [x] 2026-10-02 Claude models switched to the `opus` alias (U27); not yet run
+  with the real Claude CLI
+
+## Configurable reviewers (U14–U25, implemented 2026-10-02)
+
+Goal: the user chooses the reviewers (a user may have only Claude, only Codex,
+or want extra OpenCode models), and learns from metrics which reviewers add
+value. Decisions U14–U25; implementer decisions L23–L36 (L29–L32 confirmed by
+the user's "implement").
+
+**Today.** A reviewer is identified by its CLI (`claude`, `codex`,
+`opencode`): policy keys, finding IDs (`R1.codex.2`), credit, and waivers use
+that name, so two OpenCode models would collide. Completeness is hard-coded to
+two providers; `standard_reviewers` and the Muse Spark fallback are fixed in the
+installed policy, which a reinstall overwrites. There are two reviewer sets,
+`refine` and `audit`; `/implement`'s checks use the audit set's models.
+Durations are measured but not written to `review.md`.
+
+**Configuration.** A reviewer is `{cli: claude|codex|opencode, model: <exact
+string passed to the CLI>, effort: <exact string>}`, plus `optional: true`
+when it is optional; every other reviewer is mandatory. Each workflow also has
+one adjudicator, defined the same way (U25). The project's settings live in
+`.scope/config.yaml` under `reviewers: {refine: [...], audit: [...]}` and
+`adjudicator: {refine: {...}, audit: {...}}`, written only by
+`/scope_reviewers` (Codex `scope:reviewers`); the installers already create
+that file once and never overwrite it. Without it, the defaults in
+`scope-policy.yaml` apply: today's Claude + Codex reviewers and no adjudicator
+(L30), since Scope cannot assume credits for any model. Scope never guesses a
+model: OpenCode models are given exactly as `opencode run --model` takes them
+(`zai/glm-5.3`, `meta/muse-spark-1.3-contributor`).
+
+**`/scope_reviewers`.** Shows the effective lists with a preflight status per
+reviewer; sets them for both workflows by default, only `refine` when the user
+says architecture, epic_refine, or refine, only `audit` for implementation,
+qa, audit, or audit_epic. Saving preflights every reviewer and reports
+unavailable ones. It requires an adjudicator per workflow and warns, without
+blocking, when the adjudicator has the same model and effort as a reviewer
+(it would judge findings its own model raised). `max` effort is accepted only when the user
+asks for it explicitly. Installed as `.claude/commands/scope_reviewers.md` and
+`plugins/scope/commands/reviewers.md` (one rename line per installer).
+
+**Per-epic requests.** "add …", "replace … with …", or "remove …" in the
+arguments of `/epic_refine` (refine), `/implement` or `/audit_epic` (audit)
+apply to that epic's workflow only. The launcher records them in `review.md`
+as a `## <workflow> reviewers · <timestamp>` entry with the user's words and
+the resulting list; later rounds, status, and Gate 2 use the latest entry.
+Added reviewers are mandatory. The project lists are not changed.
+
+**Review rules.**
+- Complete: every mandatory reviewer of the effective list completed the
+  latest full content (replaces "two providers"). Mandatory reviewers are
+  retried once and are never replaced without the user's words (U9, U10
+  generalized); optional reviewers are not retried, and their failure does
+  not block.
+- Blocking and major findings from optional reviewers must be resolved like
+  any other; their minor findings never block settlement, and the author may
+  fix them (U24).
+- A finding is resolved whoever raised it. A replaced or removed reviewer's
+  open findings are verified by its replacement (credited as the fallback is
+  today), or, after a removal, by another reviewer of the list (L27).
+- Adjudication: always the workflow's adjudicator (U25, L29), recorded in
+  the round as `· adjudicator`, so its queries are counted apart even when
+  the same model also reviews. Product-scope disputes still go to the user.
+  The Muse Spark fallback is removed.
+- `/implement` checks and diagnoses: the first mandatory audit reviewer on a
+  CLI other than the host, else the first mandatory audit reviewer (L24).
+- Authors must mark cross-reviewer repeats as `duplicate of <id>` (planner and
+  implementer prompts), so unique counts are trustworthy.
+
+**OpenCode concurrency.** Parallel `opencode run` processes share one SQLite
+database and fail with lock errors (opencode issues #47566, #21215, open for
+1.18.x). Each OpenCode run gets a private temporary directory as
+`XDG_DATA_HOME` and `XDG_STATE_HOME`, with `auth.json` copied in (mode 0700,
+outside the repository), removed after the run. These runs do not appear in
+`opencode stats`.
+
+**Metrics.** Reviewer lines in `review.md` gain the duration
+(`· 412s`; old lines still parse). `scope_reviewers.py metrics --epic E
+--workflow refine|audit` prints, per reviewer: model/effort, runs, total time
+(full, verify, adjudicate, diagnose, retries), `blocking`, `major`, `minor` as
+`n (unique)`, fixed, and rejected (rejection accepted or upheld). Unique: no
+other reviewer's finding is a duplicate of it or it of theirs. `--all` adds up
+every archived epic. `/epic_refine` and `/audit_epic` (and so `/implement`)
+end with the table, followed by the adjudicator: model/effort, the number of
+times it was queried, and its time. Gate 2 lists the reviewers and the
+adjudicator who ran and flags a single-reviewer audit.
+
+**Proposals (implementer).**
+- L23 (confirmed by U23): reviewer names (used in finding IDs) are derived
+  from the model: last path segment, lowercase, `.` → `-` (`gpt-6-astra`,
+  `glm-5-3`); finding IDs become `R1.glm-5-3.2` and the ID patterns accept
+  digits and hyphens.
+- L24: check and diagnosis selection as above.
+- L25: `.scope/config.yaml` is the project's configuration, not a second Scope
+  policy file; the one-policy-file budget is unchanged.
+- L26: the request and metrics procedure is written once in the reviewers
+  command file; the lifecycle commands reference it (`/epic_refine` is at
+  145/150 lines and gets trimmed).
+- L27: after a removal, a removed reviewer's open findings are verified by the
+  first remaining reviewer that did not raise them.
+- L28: a new module `scope_reviewers.py` (effective lists, `show`, `set`,
+  per-epic requests, `metrics`) keeps `scope_launch.py` (327 code lines) under
+  its target.
+- L29: every adjudication goes to the adjudicator, also when a reviewer that
+  did not raise the finding exists (one rule; the plan's "other provider
+  re-examines" becomes "the adjudicator re-examines").
+- L30: no default adjudicator. Without one, `/epic_refine` and `/audit_epic`
+  stop at setup and ask the user to run `/scope_reviewers`; existing projects
+  run it once.
+- L31: a failed adjudicator is retried once; then the user decides
+  (`scope_review.py decide`) or names a replacement for that epic.
+- L32: diagnoses after two failed fixes stay with a reviewer (L24), not the
+  adjudicator. Per-epic requests may also replace the adjudicator.
+- L33: the project's reviewers live in their own file, `.scope/reviewers.yaml`,
+  not in `.scope/config.yaml`: rewriting the user's commented config file with
+  a YAML dump would destroy its comments. Neither installer touches it; the PR
+  check seeds one and verifies a reinstall leaves it unchanged.
+- L34: Antigravity (`agy`) support is removed: U14 limits reviewers to
+  claude, codex, and opencode, so its command line became dead code.
+- L35: `scope_launch.py preflight` is replaced by `scope_reviewers.py show
+  --preflight`, which checks the configured reviewers and adjudicator; no
+  prompt used the old subcommand.
+- L36: the per-epic request procedure is written inline in `/epic_refine`,
+  `/implement`, and `/audit_epic` (about six lines each) instead of a
+  reference into the reviewers command, whose installed file name differs per
+  host (revises L26). `/epic_refine` stays at 150 lines by rewrapping and by
+  listing the Scope 1.x artifacts with globs. Metrics count runs including
+  failed attempts (shown as `n (k failed)`); Gate 2 lists only reviewers that
+  completed at least once.
+- L37: `--remove` and `--replace` accept a reviewer's name, its exact model,
+  or its CLI when exactly one reviewer uses that CLI, so "replace codex with
+  …" works with model-derived names; an ambiguous CLI name is refused.
+
+Resolved 2026-10-02: O1 → U23, O2 → U24, O3 → U25.
+
+**Validation.** Unit and workflow tests with fake providers (two OpenCode
+reviewers in parallel, a single reviewer, an optional failure, a per-epic
+replacement, metrics with duplicates, a missing adjudicator, an adjudicator
+duplicating a reviewer); `git diff --check`;
+`./scripts/validate-pr-checks.sh` (budgets, install smoke with an existing
+`.scope/config.yaml` preserved); mirrored docs.
 
 ## Decision log
 
@@ -245,6 +401,21 @@ trailers `Scope-Approved-Commit`, `Scope-Approved-By`, `Scope-Approved-On`.
 | U11 | A round the user asks for always runs, even when settled: a new full round, or `verify --recheck [--finding]`, which re-sends closed findings to their raiser; the restate-your-outcomes follow-up is not added (user, 2026-09-24) | User authority over review rounds; lenient parsing and one retry already cover formatting slips |
 | U12 | Pilot follow-ups (user, 2026-09-24): (1) plan.md logs one line per entry, command output and operational steps in working papers in the epic folder, plan length at Gate 2; (2) the planner records a baseline of the existing test, lint, and type commands before Gate 1, and pre-existing failures become one product question (fix in the epic, or leave out of validation with a reason); (3) `min_cli_versions` in the policy, checked by preflight (Claude Code ≥ 2.1.280); (5) optional `expected_paths` in plan.md; (7) stale `/prd_breakdown` lifecycle text fixed and the unused `orchestration` section dropped from `config_example.yaml` (supersedes L12 for `/prd_breakdown`); (8) `scope_check.py criteria` writes nothing | SAG-113: plan.md reached 2,148 lines; 76 unit failures already on main surfaced only at M1 and forced a Gate 1 renewal and an extra story; the dry run failed on Claude Code 2.1.278; config, requirements, and AGENTS.md changes showed as scope warnings |
 | U13 | Not taken now (user, 2026-09-24): (6) the `scope_check.py report` command, deferred under the regrowth guardrail (code only when a lesson recurs); (9) Windows `sh` for the runner stays the limitation stated in F12/L16; (4) `verify --recheck` for SAG-113 dropped because the epic is merged; reinstalling Scope in sagara follows once this work is on `main` | User choice; the recommendations were given with the options |
+| U14 | Reviewers are configured per workflow (`refine`, `audit`) as CLI (claude, codex, opencode), exact model string, and effort; every reviewer is mandatory unless listed as optional; one reviewer is allowed (user, 2026-10-02; Claude + Codex become the default only, superseding D2 as a fixed rule) | Users differ in subscriptions; extra reviewers show which models add value |
+| U15 | Only `/scope_reviewers` (Codex `scope:reviewers`) changes the project's reviewers; a reinstall never overwrites them; it preflights each reviewer on saving and tells a single-reviewer user that they adjudicate (user, 2026-10-02) | User choice |
+| U16 | Reviewer requests in `/epic_refine`, `/implement`, or `/audit_epic` arguments apply to that epic's workflow only, and added reviewers are mandatory (user, 2026-10-02) | A user adds a reviewer for an important reason |
+| U17 | Blocking and major findings from optional reviewers must be resolved (user, 2026-10-02) | The goal is to learn who adds real value |
+| U18 | A finding is resolved regardless of who raised it; a replaced reviewer's open findings are verified by its replacement (user, 2026-10-02) | User choice |
+| U19 | With a single reviewer, the user adjudicates disputed rejections (user, 2026-10-02; superseded the same day by U25) | No uninvolved reviewer exists |
+| U20 | Each OpenCode run gets a private data directory (user, 2026-10-02) | Concurrent runs on one SQLite database fail (opencode #47566, #21215) |
+| U21 | Reviewer metrics at the end of `/epic_refine` and `/audit_epic`: model/effort, time, `blocking`/`major`/`minor` as `n (unique)`, fixed and rejected; across epics; Gate 2 lists the reviewers who ran; Scope's severity names (user, 2026-10-02) | Identify which reviewers add value |
+| U22 | `max` effort only when the user asks for it explicitly (user, 2026-10-02; amends U8) | User choice |
+| U23 | Reviewer names, used in finding IDs, are derived from the model string (user, 2026-10-02) | Exact, and gives per-model metrics with no extra input |
+| U24 | An optional reviewer's minor findings never block settlement; the author may fix them (user, 2026-10-02) | Only blocking and major findings from optional reviewers must be resolved (U17) |
+| U25 | Each workflow has one user-defined adjudicator (CLI, exact model, effort); no model is assumed (the Muse Spark fallback is removed); a warning, not a block, when it has the same model and effort as a reviewer; the metrics list the adjudicator and how often it was queried (user, 2026-10-02; supersedes U19 and D10) | Adjudication is important, and Scope cannot assume the user has credits for any model |
+| U26 | Codex models: `gpt-6-astra` (planner, default reviewers) and `gpt-6-sol` (implementer, Codex developer agent) become `gpt-6.1-sol`, efforts unchanged (user, 2026-10-02) | User choice; GPT-6.1 Sol was released 2026-09-29 and supports `xhigh`; the local Codex CLI is 0.160.0, and no minimum CLI version for it is documented |
+| U27 | Claude models use Claude Code aliases that follow the latest model of the family: `opus` for the planner, implementer, default reviewers, and developer agent (architect and product-owner already did); per-version reviewer comparison is not needed (user, 2026-10-02) | Always the latest Opus without editing Scope; Codex has no such alias, so `gpt-6.1-sol` stays pinned. A new Opus arrives with a Claude Code update, and `min_cli_versions` keeps an outdated CLI from resolving `opus` to an older model |
+| U28 | The Claude implementer stays on `opus`; Sonnet 5.5 as implementer is not trialed for now (user, 2026-10-02) | Sonnet 5.5 leads Opus 5.5 on Terminal-Bench but trails on SWE-Bench Pro (81.3% vs 89.9%), the benchmark closest to the implementer's job; a later trial would compare audit findings, fix rounds, size, and `ccusage` tokens against SAG-113 |
 | L18 | Completeness is judged on the content of the latest full round (all full rounds on that content count); freshness still needs a successful round | A partly failed round no longer lists the provider that completed as missing |
 | L1 | The implementer invokes the runner (`size` after each story, `run` at milestones); the orchestrator runs final verification | Only way to check per story inside one implementer job; numbers still come from the runner |
 | L2 | `/implement` executes `audit_epic.md` in-session, as today | Keeps user stops at the two gates |

@@ -190,14 +190,18 @@ def test_waiver_names_each_missing_review_and_is_never_a_pass(project, fake, mon
     monkeypatch.setenv("FAKE_AUDIT_FINDER", "nobody")
     audit_review(worktree)
     assert "audit incomplete" in " ".join(check(worktree, "gate2", expect=1)["problems"])
-    audit_review(worktree, "--replace", "claude", "--approved-by", "Test user")
+    scope("scope_reviewers.py", "epic", "--epic", EPIC, "--workflow", "audit", "--replace", "claude", "opencode",
+          "moonshot/kimi-v3", "xhigh", "--requested", "Test user: replace claude with kimi", cwd=worktree)
+    audit_review(worktree, "--reviewers", "kimi-v3")
     wrong = check(worktree, "waive", "--missing", "gemini", "--approver", "u", "--reason", "r", expect=1)
     assert "not a missing review" in wrong["error"]
     check(worktree, "waive", "--missing", "codex", "--approver", "Test user", "--reason", "providers down")
     gate = check(worktree, "gate2")
     assert gate["ready"] and "Verdict: INCOMPLETE (waiver: missing: codex" in gate["summary"]
+    assert "- Reviewers who ran: kimi-v3 (moonshot/kimi-v3/xhigh)" in gate["summary"]
+    assert "- Single reviewer: only one reviewer audited this epic" in gate["summary"]
     monkeypatch.setenv("FAKE_UNAVAILABLE", "")
-    audit_review(worktree, "--providers", "codex")
+    audit_review(worktree, "--reviewers", "codex")
     assert (
         "nothing to waive"
         in check(worktree, "waive", "--missing", "codex", "--approver", "u", "--reason", "r", expect=1)["error"]
@@ -231,8 +235,8 @@ def test_a_partial_rerun_on_new_code_is_not_complete(audited, fake):
     (audited / "src" / "extra.py").write_text("x = 1\n")
     git(audited, "add", "-A")
     git(audited, "commit", "-q", "-m", "unreviewed")
-    status = audit_review(audited, "--providers", "claude")["summary"]
-    assert status["providers_completed"] == ["claude"] and status["missing_reviews"] == ["codex"]
+    status = audit_review(audited, "--reviewers", "claude")["summary"]
+    assert status["reviewers_completed"] == ["claude"] and status["missing_reviews"] == ["codex"]
     assert not status["complete"]
 
 

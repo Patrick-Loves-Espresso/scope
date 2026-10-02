@@ -53,12 +53,17 @@ def refine(root: Path) -> None:
     assert scope("scope_check.py", "plan", "--epic", EPIC, cwd=root)["errors"] == []
     full = review(root, "refine", "full")
     assert full["summary"]["pending"] == {"needs_disposition": ["R1.claude.1"]}
-    assert full["summary"]["providers_completed"] == ["claude", "codex"]
+    assert full["summary"]["reviewers_completed"] == ["claude", "codex"]
+    assert full["summary"]["adjudicator"]["name"] == "glm-5-3" and full["summary"]["reviewers_source"] == "project"
     assert work(root, "planner", "Resolve the open findings in review.md.")["status"] == "done"
     assert status(root, "refine")["pending"] == {"needs_verification": ["R1.claude.1"]}
     verified = review(root, "refine", "verify")
     assert verified["summary"]["settled"], verified["summary"]
     assert scope("scope_check.py", "criteria", "--epic", EPIC, cwd=root)["approval"]["status"] == "approved"
+    report = scope("scope_reviewers.py", "metrics", "--epic", EPIC, "--workflow", "refine", cwd=root)
+    claude = next(row for row in report["reviewers"] if row["name"] == "claude")
+    assert (claude["runs"], claude["major"], claude["fixed"], claude["rejected"]) == ("2", "1 (1)", 1, 0)
+    assert "| glm-5-3 | zai/glm-5.3/high | 0 | 0 |" in report["table"]
 
 
 def implement(root: Path) -> Path:
@@ -87,8 +92,11 @@ def audit(worktree: Path) -> None:
     remediation = scope("scope_verify.py", "run", "--epic", EPIC, "--milestone", "remediation", cwd=worktree)
     assert remediation["outcome"] == "passed"
     verified = review(worktree, "audit", "verify")
-    assert verified["reviewers"][0]["provider"] == "codex"
+    assert verified["reviewers"][0]["name"] == "codex"
     assert verified["summary"]["settled"], verified["summary"]
+    report = scope("scope_reviewers.py", "metrics", "--epic", EPIC, "--workflow", "audit", cwd=worktree)
+    assert [(row["name"], row["major"], row["fixed"]) for row in report["reviewers"]] == [
+        ("claude", "0 (0)", 0), ("codex", "1 (1)", 1)]
 
 
 def wrap(root: Path, worktree: Path) -> None:
@@ -96,6 +104,8 @@ def wrap(root: Path, worktree: Path) -> None:
     gate = scope("scope_check.py", "gate2", "--epic", EPIC, cwd=worktree)
     assert gate["ready"], gate["problems"]
     assert gate["commit"] in gate["summary"] and "Verdict: passed" in gate["summary"]
+    assert "- Reviewers who ran: claude (claude/xhigh); codex (codex/xhigh)" in gate["summary"]
+    assert "- Adjudicator: not queried" in gate["summary"] and "Single reviewer" not in gate["summary"]
     assert "(plan 12 LoC / 1 files; Gate 1 12 LoC / 1 files)" in gate["summary"]
     plan_lines = len((worktree / ARCHIVED / "plan.md").read_text().splitlines())
     assert f"- plan.md: {plan_lines} lines" in gate["summary"]

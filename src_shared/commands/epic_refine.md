@@ -6,10 +6,10 @@ args: "{epic-id}"
 
 # epic_refine
 
-You orchestrate. A fresh planner writes the criteria and the plan; independent
-reviewers (Claude and Codex) review the plan. Never write the criteria, plan,
-findings, or `approvals.yaml` yourself, and never review the plan yourself.
-You talk to the user; workers and reviewers do not.
+You orchestrate. A fresh planner writes the criteria and the plan; reviewers
+review the plan and an adjudicator settles disputes. Never write the criteria,
+plan, findings, or `approvals.yaml` yourself, and never review the plan
+yourself. You talk to the user; workers and reviewers do not.
 
 Invoking this command authorizes sending the epic's documents and the
 repository to the configured reviewer providers.
@@ -32,12 +32,18 @@ ID, with a `details.md`. If `codegraph` is on PATH, run `codegraph sync` when
 `git check-ignore -q .codegraph/` succeeds.
 
 An epic planned by an older Scope version: `git rm -r` any of `design.md`,
-`delivery-manifest.yaml`, `file-plan-story-*.yaml`, `refinement-state.yaml`,
-`refinement-findings.yaml`, `refinement-review.md`,
-`implementation-evidence.yaml`, `implementation-summary.md`,
-`audit-findings.yaml`, `epic_audit.md`, and `reviews/` from the epic folder,
-and commit `refine(<epic>): remove old-format artifacts`. Its existing
-criteria are re-drafted and re-approved below.
+`delivery-manifest.yaml`, `file-plan-story-*.yaml`, `refinement-*`,
+`implementation-*`, `audit-findings.yaml`, `epic_audit.md`, and `reviews/`
+from the epic folder, and commit `refine(<epic>): remove old-format
+artifacts`. Its existing criteria are re-drafted and re-approved below.
+
+**Reviewers.** Run `$PY "$S/scope_reviewers.py" show --epic $EPIC`. Without a
+`refine` adjudicator, stop: the user chooses one with `/scope_reviewers`
+(Codex: `scope:reviewers`). If the arguments add, remove, or replace a
+reviewer or the adjudicator, apply it to this epic only, with exact model
+strings (ask when one is not): `$PY "$S/scope_reviewers.py" epic --epic $EPIC
+--workflow refine --add|--add-optional|--remove|--replace|--adjudicator ...
+--requested "<the user's words>"`; show the warnings it prints.
 
 Every script prints JSON. Read it; do not guess state.
 
@@ -85,12 +91,10 @@ renewed approval (step 2) before continuing.
 $PY "$S/scope_launch.py" review --host $HOST --workflow refine --mission full --epic $EPIC
 ```
 
-This runs Claude and Codex in parallel at high effort; a failed review is
-retried once. Never replace Claude or Codex on your own, and never substitute
-yourself. If one still fails, in any round, ask the user whether to rerun it
-later (`--providers <name>`) or let the fallback (Muse Spark) take its place;
-only on explicit approval rerun that round with
-`--replace <name> --approved-by "<the user's words>"`.
+This runs the epic's reviewers in parallel; a failed mandatory one is retried
+once, an optional one never blocks. Never replace or substitute a reviewer on
+your own: if a mandatory one still fails, ask the user whether to rerun it
+later (`--reviewers <name>`) or replace it for this epic (Setup).
 
 ## 5. Resolve until settled
 
@@ -118,7 +122,7 @@ Act on the first that applies, then check status again:
 - `needs_verification` or `needs_rejection_check`:
   `review --workflow refine --mission verify`.
 - `needs_adjudication`: `review --workflow refine --mission adjudicate`.
-- Nothing pending but not settled: rerun each provider in `missing_reviews`
+- Nothing pending but not settled: rerun each reviewer in `missing_reviews`
   as in step 4; if none is missing, the plan changed after the last round, so
   run the full review again.
 
@@ -126,8 +130,8 @@ Verification passes check only the named findings and add nothing new. No
 finding is accepted because a round budget ran out.
 
 **A round the user asks for always runs**, even when status is settled: a new
-review with `--mission full --providers <names>`, a re-verification with
-`--mission verify --recheck [--finding <id>] [--providers <name>]`. Report the
+review with `--mission full --reviewers <names>`, a re-verification with
+`--mission verify --recheck [--finding <id>] [--reviewers <name>]`. Report the
 review settled only after that round, once status is settled again.
 
 ## 6. Finish
@@ -139,7 +143,8 @@ When status reports `settled: true`, confirm `scope_check.py criteria` and
 ## Final response
 
 Report: approval source and blob, the size estimate, stories with complexity
-and estimates, reviewers and their models, findings by outcome (fixed,
-rejected and how adjudicated, accepted quality tradeoffs), doc obligations, and
-anything open. Recommend `/implement <epic>` (Codex: `scope:implement <epic>`)
-only when settled. Never report success with a check failing or a finding open.
+and estimates, findings by outcome (fixed, rejected and how adjudicated,
+accepted quality tradeoffs), doc obligations, and anything open; end with the
+table of `$PY "$S/scope_reviewers.py" metrics --epic $EPIC --workflow refine`.
+Recommend `/implement <epic>` (Codex: `scope:implement <epic>`) only when
+settled. Never report success with a check failing or a finding open.

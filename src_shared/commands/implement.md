@@ -47,6 +47,12 @@ If `codegraph` is on PATH, index the worktree: `codegraph sync` when
 `.codegraph/` exists, else `codegraph init` when
 `git check-ignore -q .codegraph/` succeeds.
 
+**Reviewers.** The checks below and the audit use the epic's `audit`
+reviewers. Run `$PY "$S/scope_reviewers.py" show --epic $EPIC` now: without an
+`audit` adjudicator, stop before implementing; the user chooses one with
+`/scope_reviewers` (Codex: `scope:reviewers`). Apply reviewer requests in the
+arguments here, in the worktree, as `/audit_epic` Setup describes.
+
 ## 1. Implement
 
 ```bash
@@ -62,8 +68,9 @@ context, external integrations, or uncertainty warrant it. Act on its status:
 
 - `done`: go to step 2.
 - `needs_check`: the implementer recorded a size overrun or a departure from
-  the reviewed plan in the decision log. Run the independent check (the other
-  provider); add `--size` for a size overrun so the round records the numbers:
+  the reviewed plan in the decision log. Run the independent check (a reviewer
+  on another CLI than yours when one exists); add `--size` for a size overrun
+  so the round records the numbers:
 
   ```bash
   $PY "$S/scope_launch.py" review --host $HOST --workflow implement --mission check \

@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 
 import scope_review as reviews
+import scope_reviewers
 import scope_verify
 from scope_common import (
     CRITERION, ScopeError, base_commit, commit_paths, criteria_ids, emit, find_epic, git, load_policy,
@@ -124,8 +125,8 @@ def gate2(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]:
     if not audit["fresh"]:
         problems.append("the branch changed after the last audit review round; review the change")
     unwaived = [provider for provider in audit["missing_reviews"] if provider not in audit["waived"]]
-    if not audit["complete"] and (unwaived or not audit["providers_completed"]):
-        problems.append(f"audit incomplete: completed {audit['providers_completed']}, missing {unwaived}; retry "
+    if not audit["complete"] and (unwaived or not audit["reviewers_completed"]):
+        problems.append(f"audit incomplete: completed {audit['reviewers_completed']}, missing {unwaived}; retry "
                         "the missing reviewers, or the user may explicitly waive each missing review")
     covered = scope_verify.coverage(root, epic)
     if not covered["covered"]:
@@ -137,7 +138,11 @@ def gate2(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]:
     waived = f"INCOMPLETE (waiver: {'; '.join(audit['waiver'])})" if audit["waiver"] else "INCOMPLETE"
     verdict = "passed" if audit["complete"] else waived
     closed = {state: [key for key, row in audit["findings"].items() if row["state"] == state]
-              for state in ("closed", "closed_unverified", "closed_rejected", "accepted_tradeoff")}
+              for state in ("closed", "closed_unverified", "closed_rejected", "accepted_tradeoff", "optional_minor")}
+    ran = scope_reviewers.metrics([review], "audit")
+    reviewed = [f"{row['name']} ({', '.join(row['models'])})" for row in ran["reviewers"] if row["completed"]]
+    judged = [f"{row['name']} ({', '.join(row['models'])}), queried {row['runs']} times" for row in ran["adjudicators"]
+              if row["completed"]]
     run = covered.get("run") or {}
     docs = [p for p in git(root, "diff", "--name-only", base, "HEAD", "--", "docs/").splitlines()
             if not p.startswith("docs/epics/")]
@@ -153,7 +158,9 @@ def gate2(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]:
         f"- Changes outside the planned paths: {size['scope_warnings']}",
         f"- plan.md: {len(plan_text.splitlines())} lines", "",
         "### Concepts (planned and actual)", "", section(plan_text, "Concepts") or "(missing)", "",
-        "### Audit", "", f"- Verdict: {verdict}", f"- Reviewers completed: {audit['providers_completed']}",
+        "### Audit", "", f"- Verdict: {verdict}", f"- Reviewers who ran: {'; '.join(reviewed) or 'none'}",
+        f"- Adjudicator: {'; '.join(judged) or 'not queried'}",
+        *(["- Single reviewer: only one reviewer audited this epic"] if len(reviewed) == 1 else []),
         *(f"- {state.replace('_', ' ')}: {keys}" for state, keys in closed.items() if keys), "",
         "### Verification", "",
         f"- {run.get('milestone')} run on `{run.get('tested_commit')}`: {run.get('outcome')}",

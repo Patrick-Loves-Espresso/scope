@@ -15,6 +15,8 @@ import yaml
 SCOPE_ROOT = Path(__file__).resolve().parent.parent
 SCOPE_BLOCK = re.compile(r"^```yaml scope[ \t]*\n(.*?)^```", re.MULTILINE | re.DOTALL)
 CRITERION = re.compile(r"^### (AC-\d{3,})\b", re.MULTILINE)
+CLIS = ("claude", "codex", "opencode")
+WORKFLOWS = ("refine", "audit")
 
 
 class ScopeError(Exception):
@@ -27,6 +29,38 @@ def now() -> str:
 
 def load_policy() -> dict[str, Any]:
     return yaml.safe_load((SCOPE_ROOT / "config" / "scope-policy.yaml").read_text(encoding="utf-8"))
+
+
+def reviewer_name(model: str) -> str:
+    """A reviewer's name, used in finding IDs: the model's last path segment, lowercase, `.` → `-`."""
+    return re.sub(r"[^a-z0-9-]+", "-", model.rsplit("/", 1)[-1].lower()).strip("-")
+
+
+def reviewer(entry: dict[str, Any], role: str = "reviewer") -> dict[str, Any]:
+    return {"name": reviewer_name(str(entry["model"])), "cli": entry["cli"], "model": str(entry["model"]),
+            "effort": str(entry["effort"]), "optional": bool(entry.get("optional")), "role": role}
+
+
+def reviewers_file(root: Path) -> Path:
+    """The project's reviewers, written only by `scope_reviewers.py set`; installers never touch it."""
+    return main_root(root) / ".scope" / "reviewers.yaml"
+
+
+def project_settings(root: Path, policy: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Reviewers and adjudicator per workflow: the project's file, else the policy defaults (no adjudicator)."""
+    path = reviewers_file(root)
+    data = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}) if path.is_file() else {}
+    settings = {}
+    for workflow in WORKFLOWS:
+        chosen = data.get(workflow) or {}
+        adjudicator = chosen.get("adjudicator")
+        settings[workflow] = {
+            "reviewers": [reviewer(entry)
+                          for entry in chosen.get("reviewers") or policy["default_reviewers"][workflow]],
+            "adjudicator": reviewer(adjudicator, "adjudicator") if adjudicator else None,
+            "replaced": {}, "source": "project" if chosen else "default",
+        }
+    return settings
 
 
 def git(root: Path, *args: str, check: bool = True) -> str:

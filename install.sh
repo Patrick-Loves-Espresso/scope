@@ -158,6 +158,7 @@ echo ""
 
 copy_overlay "${SHARED_SRC}/commands" "${CLAUDE_DIR}/commands"
 copy_overlay "${CLAUDE_SRC}/commands" "${CLAUDE_DIR}/commands"
+mv -f "${CLAUDE_DIR}/commands/reviewers.md" "${CLAUDE_DIR}/commands/scope_reviewers.md"  # Claude: /scope_reviewers
 copy_overlay "${SHARED_SRC}/scripts" "${CLAUDE_DIR}/scripts"
 copy_overlay "${CLAUDE_SRC}/scripts" "${CLAUDE_DIR}/scripts"
 copy_overlay "${SHARED_SRC}/config" "${CLAUDE_DIR}/config"

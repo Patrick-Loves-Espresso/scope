@@ -195,7 +195,14 @@ check_install() {
     touch "$tmpdir/$root/scripts/.DS_Store" "$tmpdir/$root/scripts/__pycache__/stale.pyc" \
       "$tmpdir/$root/scripts/.pytest_cache/stale"
   done
+  mkdir -p "$tmpdir/.scope"
+  printf 'refine:\n  adjudicator: {cli: codex, model: chosen-by-user, effort: high}\n' >"$tmpdir/.scope/reviewers.yaml"
+  cp "$tmpdir/.scope/reviewers.yaml" "$tmpdir/reviewers.before"
   ./install.sh "$tmpdir" >"$tmpdir/install.log"
+  cmp -s "$tmpdir/.scope/reviewers.yaml" "$tmpdir/reviewers.before" || fail "install changed .scope/reviewers.yaml"
+  test -f "$tmpdir/.claude/commands/scope_reviewers.md" || fail "install is missing .claude/commands/scope_reviewers.md"
+  test ! -e "$tmpdir/.claude/commands/reviewers.md" || fail "Claude must get the reviewers command as /scope_reviewers"
+  test -f "$tmpdir/plugins/scope/commands/reviewers.md" || fail "install is missing plugins/scope/commands/reviewers.md"
 
   for root in .claude plugins/scope; do
     for path in \
@@ -203,7 +210,8 @@ check_install() {
       commands/epic_refine/reviewer-refinement.md commands/audit_epic/reviewer-audit.md \
       workers/planner.md workers/implementer.md workers/reviewer.md \
       governance/simplicity-and-size.md governance/developer-checklist.md config/scope-policy.yaml \
-      scripts/scope_common.py scripts/scope_providers.py agents/developer.md agents/architect.md \
+      scripts/scope_common.py scripts/scope_providers.py scripts/scope_reviewers.py agents/developer.md \
+      agents/architect.md \
       agents/product-owner.md skills/project-documentation/SKILL.md \
       skills/project-documentation/templates-technical-arc42-c4/epic/details.md \
       skills/project-documentation/templates-technical-arc42-c4/epic/acceptance-criteria.md \
@@ -266,8 +274,8 @@ check_install() {
   fi
   grep -n "Path selection rule" "$tmpdir/.claude/skills/project-documentation/SKILL.md"
   grep -n "Do not ask for a Jira project key" "$tmpdir/.claude/skills/project-tracking/SKILL.md"
-  grep -n '^model: claude-opus-5-5$' "$tmpdir/.claude/agents/developer.md"
-  grep -n '^model: gpt-6-sol$' "$tmpdir/plugins/scope/agents/developer.md"
+  grep -n '^model: opus$' "$tmpdir/.claude/agents/developer.md"
+  grep -n '^model: gpt-6\.1-sol$' "$tmpdir/plugins/scope/agents/developer.md"
   grep -n '^model_reasoning_effort: xhigh$' "$tmpdir/plugins/scope/agents/developer.md"
 
   rm -rf "$tmpdir"
@@ -294,6 +302,7 @@ check_windows_installer() {
   done
 
   grep -n 'config_example.yaml' install.bat
+  grep -n 'commands\\scope_reviewers.md' install.bat
   grep -n 'requirements.txt' install.bat
   grep -n 'scope-reviewer-tmux.sh' install.bat
   grep -n 'reviewer-codex reviewer-claude reviewer-agy reviewer-glm' install.bat
@@ -389,6 +398,9 @@ check_lifecycle_contract() {
   if grep -R -n -E 'codex exec|claude --print|opencode run' src_shared/commands; then
     fail "command prompts must launch providers through scope_launch.py"
   fi
+  if grep -R -n -E -- '--providers|--approved-by|fallback_reviewer|standard_reviewers' src_shared; then
+    fail "reviewers are configured with scope_reviewers.py; the fixed providers and the fallback are retired"
+  fi
   if grep -R -n -E -- '--ask-for-approval([[:space:]]|$)|--dangerously-skip-permissions|--dangerously-bypass' \
     src_shared src_claude src_codex; then
     fail "providers must keep their permission checks and sandboxes"
@@ -403,8 +415,8 @@ check_lifecycle_contract() {
   grep -n -- '"--ignore-user-config"' src_shared/scripts/scope_providers.py
   grep -n -- '"workspace-write" if write else "read-only"' src_shared/scripts/scope_providers.py
   grep -n -- '"--agent", "plan"' src_shared/scripts/scope_providers.py
-  grep -n 'fallback_reviewer: opencode' src_shared/config/scope-policy.yaml
-  grep -n 'standard_reviewers: \[claude, codex\]' src_shared/config/scope-policy.yaml
+  grep -n '^default_reviewers:' src_shared/config/scope-policy.yaml
+  grep -n '^mandatory_retries: 1' src_shared/config/scope-policy.yaml
   grep -n 'growth_threshold: 1.5' src_shared/config/scope-policy.yaml
   grep -n 'story_complexity_max: 7' src_shared/config/scope-policy.yaml
 }
