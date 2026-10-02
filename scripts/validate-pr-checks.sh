@@ -274,7 +274,7 @@ check_install() {
   fi
   grep -n "Path selection rule" "$tmpdir/.claude/skills/project-documentation/SKILL.md"
   grep -n "Do not ask for a Jira project key" "$tmpdir/.claude/skills/project-tracking/SKILL.md"
-  grep -n '^model: claude-opus-5-5$' "$tmpdir/.claude/agents/developer.md"
+  grep -n '^model: opus$' "$tmpdir/.claude/agents/developer.md"
   grep -n '^model: gpt-6\.1-sol$' "$tmpdir/plugins/scope/agents/developer.md"
   grep -n '^model_reasoning_effort: xhigh$' "$tmpdir/plugins/scope/agents/developer.md"
 

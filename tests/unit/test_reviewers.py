@@ -61,7 +61,7 @@ def test_max_needs_an_explicit_request_and_the_defaults_have_no_adjudicator(proj
     (project / ".scope" / "reviewers.yaml").unlink()
     shown = reviewers(project, "show", expect=1)
     assert shown["refine"]["source"] == "default"
-    assert [entry["name"] for entry in shown["refine"]["reviewers"]] == ["claude-opus-5-5", "gpt-6-1-sol"]
+    assert [entry["name"] for entry in shown["refine"]["reviewers"]] == ["opus", "gpt-6-1-sol"]
     assert shown["refine"]["problems"] == ["no adjudicator: the user must choose its CLI, exact model, and effort"]
     assert "no adjudicator" in reviewers(project, "set", "--add-optional", "opencode", "zai/glm-5.3", "high",
                                          expect=1)["error"]

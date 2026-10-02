@@ -241,6 +241,8 @@ keep the original wording where it still holds.
   isolation, metrics, Gate 2 reviewer lines; tests and docs updated
 - [x] 2026-10-02 Codex models switched to `gpt-6.1-sol` (U26); not yet run
   with the real Codex CLI
+- [x] 2026-10-02 Claude models switched to the `opus` alias (U27); not yet run
+  with the real Claude CLI
 
 ## Configurable reviewers (U14–U25, implemented 2026-10-02)
 
@@ -409,6 +411,7 @@ duplicating a reviewer); `git diff --check`;
 | U24 | An optional reviewer's minor findings never block settlement; the author may fix them (user, 2026-10-02) | Only blocking and major findings from optional reviewers must be resolved (U17) |
 | U25 | Each workflow has one user-defined adjudicator (CLI, exact model, effort); no model is assumed (the Muse Spark fallback is removed); a warning, not a block, when it has the same model and effort as a reviewer; the metrics list the adjudicator and how often it was queried (user, 2026-10-02; supersedes U19 and D10) | Adjudication is important, and Scope cannot assume the user has credits for any model |
 | U26 | Codex models: `gpt-6-astra` (planner, default reviewers) and `gpt-6-sol` (implementer, Codex developer agent) become `gpt-6.1-sol`, efforts unchanged (user, 2026-10-02) | User choice; GPT-6.1 Sol was released 2026-09-29 and supports `xhigh`; the local Codex CLI is 0.160.0, and no minimum CLI version for it is documented |
+| U27 | Claude models use Claude Code aliases that follow the latest model of the family: `opus` for the planner, implementer, default reviewers, and developer agent (architect and product-owner already did); per-version reviewer comparison is not needed (user, 2026-10-02) | Always the latest Opus without editing Scope; Codex has no such alias, so `gpt-6.1-sol` stays pinned. A new Opus arrives with a Claude Code update, and `min_cli_versions` keeps an outdated CLI from resolving `opus` to an older model |
 | L18 | Completeness is judged on the content of the latest full round (all full rounds on that content count); freshness still needs a successful round | A partly failed round no longer lists the provider that completed as missing |
 | L1 | The implementer invokes the runner (`size` after each story, `run` at milestones); the orchestrator runs final verification | Only way to check per story inside one implementer job; numbers still come from the runner |
 | L2 | `/implement` executes `audit_epic.md` in-session, as today | Keeps user stops at the two gates |

@@ -20,10 +20,10 @@ rejection is overturned. Suggestions are optional and never tracked.
 
 ## refine 1 · full · 2026-09-23T10:00:00Z
 - commit: 0123456789abcdef0123456789abcdef01234567
-- reviewer claude-opus-5-5 · claude-opus-5-5/high · completed · changes_required · 412s
+- reviewer opus · opus/high · completed · changes_required · 412s
 - reviewer gpt-6-1-sol · gpt-6.1-sol/high · completed · approve · 380s
 
-### R1.claude-opus-5-5.1 · major · feasibility
+### R1.opus.1 · major · feasibility
 - evidence: plan.md "Approach" assumes a queue that 05-building-blocks.md does not have
 - correction: use the existing scheduler
 - closure: plan.md names the scheduler and no queue
@@ -31,8 +31,8 @@ rejection is overturned. Suggestions are optional and never tracked.
 
 ## refine 2 · verify · 2026-09-23T11:00:00Z
 - commit: 89abcdef0123456789abcdef0123456789abcdef
-- reviewer claude-opus-5-5 · claude-opus-5-5/high · completed · done · 95s
-- R1.claude-opus-5-5.1 · claude-opus-5-5: verified — the plan now uses the scheduler
+- reviewer opus · opus/high · completed · done · 95s
+- R1.opus.1 · opus: verified — the plan now uses the scheduler
 
 Reviewer names derive from the model string. A `## <workflow> reviewers` entry
 records a user's request that changed this epic's reviewers or adjudicator;
