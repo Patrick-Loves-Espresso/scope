@@ -15,7 +15,7 @@ from test_launch import request, review, reviewers, rows, write_review
 
 @pytest.mark.parametrize(
     ("model", "name"),
-    [("claude-opus-5-5", "claude-opus-5-5"), ("gpt-6-astra", "gpt-6-astra"), ("zai/glm-5.3", "glm-5-3"),
+    [("claude-opus-5-5", "claude-opus-5-5"), ("gpt-6.1-sol", "gpt-6-1-sol"), ("zai/glm-5.3", "glm-5-3"),
      ("meta/muse-spark-1.3-contributor", "muse-spark-1-3-contributor")],
 )
 def test_reviewer_names_derive_from_the_model_string(model, name):
@@ -41,7 +41,7 @@ def test_set_changes_one_workflow_and_warns_about_a_duplicated_adjudicator(proje
     [
         (("--add", "gemini", "g-3", "high"), "the CLI must be one of claude, codex, opencode"),
         (("--add", "opencode", "glm-5.3", "high"), "exact provider/model string"),
-        (("--add", "codex", "gpt-6-sol", "max"), "max effort only when the user explicitly asks for it"),
+        (("--add", "codex", "gpt-6.1-sol", "max"), "max effort only when the user explicitly asks for it"),
         (("--add", "opencode", "other/codex", "high"), "two reviewers would both be named codex"),
         (("--add", "opencode", "zai/4.5", "high"), "no reviewer name can be derived"),
         (("--remove", "gemini"), "no reviewer 'gemini'"),
@@ -54,14 +54,14 @@ def test_set_refuses_unusable_reviewers(project, fake, changes, error):
 
 
 def test_max_needs_an_explicit_request_and_the_defaults_have_no_adjudicator(project, fake):
-    chosen = reviewers(project, "set", "--workflow", "audit", "--replace", "codex", "codex", "gpt-6-sol", "max",
+    chosen = reviewers(project, "set", "--workflow", "audit", "--replace", "codex", "codex", "gpt-6.1-sol", "max",
                        "--allow-max")
-    assert chosen["audit"]["reviewers"][1] == {"name": "gpt-6-sol", "cli": "codex", "model": "gpt-6-sol",
+    assert chosen["audit"]["reviewers"][1] == {"name": "gpt-6-1-sol", "cli": "codex", "model": "gpt-6.1-sol",
                                                "effort": "max", "optional": False}
     (project / ".scope" / "reviewers.yaml").unlink()
     shown = reviewers(project, "show", expect=1)
     assert shown["refine"]["source"] == "default"
-    assert [entry["name"] for entry in shown["refine"]["reviewers"]] == ["claude-opus-5-5", "gpt-6-astra"]
+    assert [entry["name"] for entry in shown["refine"]["reviewers"]] == ["claude-opus-5-5", "gpt-6-1-sol"]
     assert shown["refine"]["problems"] == ["no adjudicator: the user must choose its CLI, exact model, and effort"]
     assert "no adjudicator" in reviewers(project, "set", "--add-optional", "opencode", "zai/glm-5.3", "high",
                                          expect=1)["error"]
@@ -69,8 +69,8 @@ def test_max_needs_an_explicit_request_and_the_defaults_have_no_adjudicator(proj
     assert created["audit"]["adjudicator"]["name"] == "glm-5-3" and created["audit"]["source"] == "project"
     no_change = reviewers(project, "epic", "--epic", EPIC, "--workflow", "refine", "--requested", "x", expect=1)
     assert no_change["error"] == "no change requested"
-    duplicate = request(project, "refine", "--add", "codex", "gpt-6-astra", "xhigh", expect=1)["error"]
-    assert duplicate == "two reviewers would both be named gpt-6-astra"
+    duplicate = request(project, "refine", "--add", "codex", "gpt-6.1-sol", "xhigh", expect=1)["error"]
+    assert duplicate == "two reviewers would both be named gpt-6-1-sol"
 
 
 def test_opencode_reviewers_run_in_parallel_with_private_data_directories(planned, fake, tmp_path):

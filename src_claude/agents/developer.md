@@ -1,7 +1,7 @@
 ---
 name: developer
 description: Implement production-ready code with tests, within the approved criteria and plan.
-# Claude-native implementation default; effort follows the session. Codex sets its own model and effort.
+# Claude-native implementation default; effort follows the session. The Codex copy uses gpt-6.1-sol at xhigh.
 model: claude-opus-5-5
 tools: Read, Write, Edit, Bash, Glob, Grep
 ---
