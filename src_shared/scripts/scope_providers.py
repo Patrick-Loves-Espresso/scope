@@ -2,7 +2,7 @@
 
 The flags are harvested from the proven Scope 2 runners: Claude runs in safe
 mode without MCP or session persistence, reviewers are read-only (Claude tool
-denials, Codex read-only sandbox, OpenCode plan agent, Antigravity sandbox).
+denials, Codex read-only sandbox, OpenCode plan agent).
 """
 
 from __future__ import annotations
@@ -15,8 +15,9 @@ import re
 import shutil
 import signal
 import subprocess
+import tempfile
 import time
-from typing import Any
+from typing import Any, Iterator
 
 import psutil
 
@@ -29,8 +30,27 @@ CODEX_FLAGS = ("--output-last-message", "--ignore-user-config", "--sandbox")
 STDIN_PROVIDERS = {"claude", "codex"}
 
 
-def _capture(command: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+def _capture(command: list[str], timeout: float, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
+    return subprocess.run(command, capture_output=True, text=True, timeout=timeout,
+                          env={**os.environ, **env} if env else None)
+
+
+@contextlib.contextmanager
+def _isolated(provider: str) -> Iterator[dict[str, str]]:
+    """A private OpenCode data directory per run, holding a copy of its auth.json: concurrent runs on the shared
+    SQLite database fail with lock errors (opencode issues #47566, #21215). Other CLIs need nothing."""
+    if provider != "opencode":
+        yield {}
+        return
+    home = Path(tempfile.mkdtemp(prefix="scope-opencode-"))  # mode 0700, outside the repository
+    try:
+        auth = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "opencode" / "auth.json"
+        if auth.is_file():
+            (home / "share" / "opencode").mkdir(parents=True)
+            shutil.copy2(auth, home / "share" / "opencode" / "auth.json")
+        yield {"XDG_DATA_HOME": str(home / "share"), "XDG_STATE_HOME": str(home / "state")}
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
 
 
 def _version(text: str) -> tuple[int, ...]:
@@ -68,7 +88,8 @@ def preflight(provider: str, model: str, timeout: float, minimum: str | None = N
             if missing:
                 return f"codex CLI lacks {', '.join(missing)}"
         else:
-            catalog = _capture([executable, "models"], timeout)
+            with _isolated(provider) as env:
+                catalog = _capture([executable, "models"], timeout, env)
             listed = re.search(rf"(?<![\w./-]){re.escape(model)}(?![\w./-])", catalog.stdout + catalog.stderr)
             if listed is None:
                 return f"{provider} does not list model {model}"
@@ -86,7 +107,6 @@ def command(
     write: bool,
     output_path: Path,
     prompt: str,
-    timeout: float,
     read_only_commands: list[str] = (),
     add_dirs: list[Path] = (),
 ) -> list[str]:
@@ -122,9 +142,6 @@ def command(
     if provider == "opencode":
         return ["opencode", "run", "--pure", "--agent", "plan", "--model", model,
                 "--variant", effort, "--dir", str(root), prompt]
-    if provider == "agy":
-        return ["agy", "--model", model, "--sandbox", "--print-timeout",
-                f"{max(1, int(timeout // 60))}m", "--print", prompt]
     raise ValueError(f"unknown provider: {provider}")
 
 
@@ -164,12 +181,12 @@ def run(
     group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
     started = time.monotonic()
     timed_out = False
-    with stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
+    with _isolated(provider) as private, stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:
         try:
             process = subprocess.Popen(
                 [executable, *argv[1:]], cwd=cwd, stdout=stdout, stderr=stderr,
                 stdin=subprocess.PIPE if provider in STDIN_PROVIDERS else subprocess.DEVNULL,
-                env={**os.environ, "NO_COLOR": "1"}, **group,
+                env={**os.environ, "NO_COLOR": "1", **private}, **group,
             )
         except OSError as exc:
             return {"exit_code": None, "timed_out": False, "duration_seconds": 0.0, "error": str(exc)}

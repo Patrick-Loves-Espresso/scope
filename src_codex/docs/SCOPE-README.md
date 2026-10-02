@@ -27,11 +27,12 @@ for genuine product decisions.
 - **`/prd_create`** — Interview the user to create a lightweight first-pass PRD before refinement
 - **`/prd_refine`** — Interactively refine a product requirements document using a checklist-driven approach
 - **`/prd_breakdown`** — Break the PRD into implementable epics with architecture and dependency analysis
-- **`/epic_refine`** — Draft observable acceptance criteria with a size estimate and a "not building" list for your approval, write a living plan, and settle one review by Claude and Codex
+- **`/epic_refine`** — Draft observable acceptance criteria with a size estimate and a "not building" list for your approval, write a living plan, and settle one review by your reviewers
 - **`/implement`** — Build the plan in a git worktree with one implementer that commits per story, runner-executed tests, a size check after each story, finalized docs, and the independent audit
-- **`/audit_epic`** — Two independent providers audit the branch, including docs against code; findings are fixed and verified, or rejected and adjudicated
+- **`/audit_epic`** — Your reviewers audit the branch independently, including docs against code; findings are fixed and verified, or rejected and adjudicated
 - **`/wrap_epic`** — Show the exact commit for your approval and merge exactly that commit, with the approval recorded in the merge commit
 - **`/sync_product`** — Update product documentation when implementation reveals scope changes
+- **`/scope_reviewers`** / **`scope:reviewers`** — Choose the reviewers (Claude, Codex, or OpenCode models; mandatory or optional) and the adjudicator for refinement and audit, with a preflight of each
 
 ### Reverse Engineering (Code to Docs)
 
@@ -54,8 +55,12 @@ fresh provider processes through Scope's launcher:
 
 - a **planner** writes the acceptance criteria and the plan;
 - an **implementer** writes the code, tests, and docs, and commits per story;
-- **reviewers** (Claude and Codex, read-only) review the plan and audit the
-  result; Muse Spark replaces an unavailable reviewer only with your approval.
+- **reviewers** (read-only; Claude and Codex by default, plus any OpenCode
+  model you add) review the plan and audit the result, and an **adjudicator**
+  you choose settles disputed rejections. `/scope_reviewers` sets them for the
+  project; a lifecycle command can change them for one epic. Each review ends
+  with metrics per reviewer: time, findings by severity (unique ones in
+  parentheses), fixed and rejected.
 
 Workers run on the provider that hosts the command. Scope appends the
 simplicity-and-size rules to every worker and reviewer prompt: build the
@@ -215,10 +220,10 @@ and only scope growth comes to you.
 
 **Independent review with adjudication.** Findings are fixed or rejected with a
 reason. The reviewer who raised a finding verifies the fix; a rejected finding
-goes back to that reviewer and, if maintained, to the other provider, which
+goes back to that reviewer and, if maintained, to the adjudicator, which
 examines it from scratch. A finding that survives two fixes gets an
-independent diagnosis. No finding is accepted because a budget ran out, and a
-one-provider audit never passes.
+independent diagnosis. No finding is accepted because a budget ran out, and an
+audit missing a mandatory reviewer never passes.
 
 **Runner verification.** The plan declares its validation commands; Scope runs
 them on a committed state, reads standard JUnit XML (pytest `--junitxml`,
@@ -234,12 +239,12 @@ state only.
 ## Requirements
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or the
-  [Codex](https://developers.openai.com/codex) CLI, authenticated; both are
-  needed for cross-provider review. Claude Code must be 2.1.280 or newer
-  (preflight checks it)
-- [OpenCode](https://opencode.ai) with Muse Spark for the fallback reviewer
-  (optional; used only when you approve replacing an unavailable Claude or
-  Codex review)
+  [Codex](https://developers.openai.com/codex) CLI, authenticated; Scope uses
+  the reviewers you choose with `/scope_reviewers` (Claude and Codex by
+  default). Claude Code must be 2.1.280 or newer (preflight checks it)
+- [OpenCode](https://opencode.ai) for reviewers or an adjudicator on other
+  models (optional; each run gets a private data directory, so parallel runs
+  do not collide)
 - Python 3 with the packages in `requirements.txt`
 - Git
 

@@ -36,7 +36,8 @@ DECISIONS = {
 REVIEW_MISSIONS = {"full", "verify", "adjudicate", "diagnose"}
 MISSIONS = {"refine": REVIEW_MISSIONS, "audit": REVIEW_MISSIONS, "implement": {"check"}}
 RECHECKABLE = {"closed", "closed_unverified", "closed_rejected", "accepted_tradeoff"}
-REPORTED = ("provider", "model", "status", "decision", "error", "duration_seconds", "fallback_for", "retried_after")
+REPORTED = ("name", "role", "cli", "model", "effort", "optional", "status", "decision", "error", "duration_seconds",
+            "retried_after")
 CODEGRAPH = (
     "if `.codegraph/` exists and the `codegraph` CLI is installed, use its read-only queries "
     "(`explore`, `node`, `query`, `callers`, `callees`, `impact`, `affected`) before broad searches and "
@@ -90,7 +91,7 @@ def cmd_work(args: argparse.Namespace) -> None:
         add_dirs = [Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")), out.parent]
     argv = providers.command(
         args.host, model=selected["model"], effort=selected["effort"], root=root, write=True,
-        output_path=out / "message.md", prompt=prompt, timeout=timeouts[args.role], add_dirs=add_dirs,
+        output_path=out / "message.md", prompt=prompt, add_dirs=add_dirs,
     )
     start = git(root, "rev-parse", "HEAD")
     result = providers.run(argv, provider=args.host, prompt=prompt, cwd=root, stdout_path=out / "stdout.log",
@@ -119,49 +120,74 @@ def cmd_work(args: argparse.Namespace) -> None:
     })
 
 
-def _assignments(args: argparse.Namespace, review: reviews.Review, policy: dict[str, Any]) -> list[dict[str, Any]]:
-    standard, fallback = policy["standard_reviewers"], policy["fallback_reviewer"]
-    explicit = args.providers.split(",") if args.providers else None
+NO_ADJUDICATOR = ("no adjudicator is set for the {workflow} workflow; the user must choose one with "
+                  "/scope_reviewers (Codex: scope:reviewers)")
+
+
+def _verifier(raiser: str, chosen: dict[str, Any], raised: set[str]) -> dict[str, Any]:
+    """Who checks a raiser's finding: the raiser, else its replacement, else the first mandatory reviewer that did
+    not raise it (U18: a removed reviewer's open findings are still checked)."""
+    by_name = {entry["name"]: entry for entry in chosen["reviewers"]}
+    name = raiser
+    while name not in by_name and name in chosen["replaced"]:
+        name = chosen["replaced"][name]
+    mandatory = [entry for entry in chosen["reviewers"] if not entry["optional"]]
+    return by_name.get(name) or next((entry for entry in mandatory if entry["name"] not in raised), mandatory[0])
+
+
+def _assignments(args: argparse.Namespace, review: reviews.Review, chosen: dict[str, Any]) -> list[dict[str, Any]]:
+    by_name = {entry["name"]: entry for entry in chosen["reviewers"]}
+    explicit = args.reviewers.split(",") if args.reviewers else []
+    unknown = [name for name in explicit if name not in by_name]
+    if unknown:
+        raise ScopeError(f"unknown reviewers {unknown}; this epic's reviewers: {sorted(by_name)}")
     if args.mission == "full":
-        return [{"provider": provider, "findings": {}} for provider in explicit or standard]
+        return [{"reviewer": entry, "findings": {}, "credit": {}}
+                for entry in ([by_name[name] for name in explicit] or chosen["reviewers"])]
     if args.mission in ("check", "diagnose"):
         if args.mission == "check" and not args.context:
             raise ScopeError("--context is required for a check")
         if args.mission == "diagnose" and args.finding not in review.findings:
             raise ScopeError("--finding must name an existing finding for a diagnosis")
-        independent = [provider for provider in standard if provider != args.host] or [fallback]
-        if explicit and explicit[0] == args.host:
-            raise ScopeError(f"a {args.mission} must come from a provider other than the author ({args.host})")
+        mandatory = [entry for entry in chosen["reviewers"] if not entry["optional"]]
+        other = next((entry for entry in mandatory if entry["cli"] != args.host), mandatory[0])  # L24
         findings = {args.finding: {"diagnosis"}} if args.mission == "diagnose" else {}
-        return [{"provider": (explicit or independent)[0], "findings": findings}]
-    grouped: dict[str, dict[str, set[str]]] = {}
-    for finding_id, state in reviews.states(review, args.workflow).items():
+        return [{"reviewer": by_name[explicit[0]] if explicit else other, "findings": findings, "credit": {}}]
+    finding_states = reviews.states(review, args.workflow, {e["name"] for e in chosen["reviewers"] if e["optional"]})
+    if args.mission == "adjudicate":
+        if explicit:
+            raise ScopeError("adjudication goes to the adjudicator; change it with scope_reviewers.py epic")
+        findings = {key: reviews.ADJUDICATION_OUTCOMES for key, state in finding_states.items()
+                    if state == "needs_adjudication" and args.finding in (None, key)}
+        if not findings:
+            raise ScopeError("no findings need the adjudicate mission")
+        return [{"reviewer": chosen["adjudicator"], "findings": findings, "credit": {}}]
+    grouped: dict[str, dict[str, Any]] = {}
+    for finding_id, state in finding_states.items():
         finding = review.findings[finding_id]
         if args.finding not in (None, finding_id):
             continue
-        if args.mission == "verify" and state in ("needs_verification", "needs_rejection_check"):
+        if state in ("needs_verification", "needs_rejection_check"):
             allowed = reviews.FIX_OUTCOMES if state == "needs_verification" else reviews.REJECTION_OUTCOMES
-            chosen = reviews.pending_providers(review, finding_id, state)
-        elif args.mission == "verify" and args.recheck and state in RECHECKABLE and finding.disposition != "open":
+            pending = reviews.pending_providers(review, finding_id, state)
+        elif args.recheck and state in RECHECKABLE and finding.disposition != "open":
             allowed = reviews.FIX_OUTCOMES if finding.disposition == "fixed" else reviews.REJECTION_OUTCOMES
-            chosen = reviews.raisers(review, finding_id)
-        elif args.mission == "adjudicate" and state == "needs_adjudication":
-            raised = reviews.raisers(review, finding_id)
-            uninvolved = [p for p in [*standard, fallback] if p not in raised]
-            if not uninvolved:
-                raise ScopeError(f"{finding_id}: every reviewer raised it; settle it with an executable check "
-                                 "or the user")
-            allowed, chosen = reviews.ADJUDICATION_OUTCOMES, {uninvolved[0]}
+            pending = reviews.raisers(review, finding_id)
         else:
             continue
-        eligible = reviews.raisers(review, finding_id) if args.mission == "verify" else set(uninvolved)
-        if explicit and explicit[0] not in eligible:
-            raise ScopeError(f"{explicit[0]} may not {args.mission} {finding_id}; eligible: {sorted(eligible)}")
-        for provider in ([explicit[0]] if explicit else sorted(chosen)):
-            grouped.setdefault(provider, {})[finding_id] = allowed
+        raised = reviews.raisers(review, finding_id)
+        for raiser in sorted(pending):
+            verifier = _verifier(raiser, chosen, raised)
+            if explicit and explicit[0] not in (raiser, verifier["name"]):
+                raise ScopeError(f"{explicit[0]} may not verify {finding_id} for {raiser}; "
+                                 f"eligible: {sorted({raiser, verifier['name']})}")
+            entry = by_name[explicit[0]] if explicit else verifier
+            job = grouped.setdefault(entry["name"], {"reviewer": entry, "findings": {}, "credit": {}})
+            job["findings"][finding_id] = allowed
+            job["credit"].setdefault(finding_id, []).append(raiser)
     if not grouped:
         raise ScopeError(f"no findings need the {args.mission} mission")
-    return [{"provider": provider, "findings": findings} for provider, findings in grouped.items()]
+    return list(grouped.values())
 
 
 def reviewer_prompt(args: argparse.Namespace, root: Path, epic: Path, review: reviews.Review, findings: dict) -> str:
@@ -184,30 +210,29 @@ def reviewer_prompt(args: argparse.Namespace, root: Path, epic: Path, review: re
     return "\n\n".join(parts) + "\n"
 
 
-def _run_reviewer(args, root, epic, review, policy, out, assignment, name: str = "") -> dict[str, Any]:
-    provider = assignment["provider"]
-    name = name or provider
-    selected = policy["reviewers"]["refine" if args.workflow == "refine" else "audit"][provider]
-    row = {"provider": provider, "model": selected["model"], "effort": selected["effort"], "decision": None,
-           "fallback_for": assignment.get("fallback_for")}
-    problem = providers.preflight(provider, selected["model"], policy["timeouts_seconds"]["preflight"],
-                                  policy["min_cli_versions"].get(provider))
+def _run_reviewer(args, root, epic, review, policy, out, assignment, suffix: str = "") -> dict[str, Any]:
+    spec = assignment["reviewer"]
+    name, cli = spec["name"], spec["cli"]
+    row = {**spec, "decision": None, "duration_seconds": 0.0, "credit": assignment["credit"]}
+    problem = providers.preflight(cli, spec["model"], policy["timeouts_seconds"]["preflight"],
+                                  policy["min_cli_versions"].get(cli))
     if problem:
         return {**row, "status": "unavailable", "error": problem}
     prompt = reviewer_prompt(args, root, epic, review, assignment["findings"])
-    (out / f"prompt-{name}.md").write_text(prompt, encoding="utf-8")
+    label = f"{spec['role']}-{name}{suffix}"
+    (out / f"prompt-{label}.md").write_text(prompt, encoding="utf-8")
     timeout = policy["timeouts_seconds"]["reviewer"]
     index = root / ".codegraph"  # a read-only Codex sandbox cannot open the CodeGraph database otherwise
-    argv = providers.command(provider, model=selected["model"], effort=selected["effort"], root=root, write=False,
-                             output_path=out / f"review-{name}.md", prompt=prompt, timeout=timeout,
+    argv = providers.command(cli, model=spec["model"], effort=spec["effort"], root=root, write=False,
+                             output_path=out / f"review-{label}.md", prompt=prompt,
                              read_only_commands=policy["reviewer_read_only_commands"],
-                             add_dirs=[index] if provider == "codex" and index.is_dir() else [])
-    result = providers.run(argv, provider=provider, prompt=prompt, cwd=root, stdout_path=out / f"{name}.stdout",
-                           stderr_path=out / f"{name}.stderr", timeout=timeout)
-    text, _ = providers.final_message(provider, out / f"{name}.stdout", out / f"review-{name}.md")
+                             add_dirs=[index] if cli == "codex" and index.is_dir() else [])
+    result = providers.run(argv, provider=cli, prompt=prompt, cwd=root, stdout_path=out / f"{label}.stdout",
+                           stderr_path=out / f"{label}.stderr", timeout=timeout)
+    text, _ = providers.final_message(cli, out / f"{label}.stdout", out / f"review-{label}.md")
     row.update(duration_seconds=result["duration_seconds"], text=text)
     if result["timed_out"] or result["exit_code"] != 0 or not text.strip():
-        stderr = (out / f"{name}.stderr").read_text(encoding="utf-8", errors="replace").strip()
+        stderr = (out / f"{label}.stderr").read_text(encoding="utf-8", errors="replace").strip()
         return {**row, "status": "timed_out" if result["timed_out"] else "failed", "error": stderr[-500:]}
     row["decision"] = reviews.decision(text)
     try:
@@ -223,27 +248,25 @@ def _run_reviewer(args, root, epic, review, policy, out, assignment, name: str =
 
 
 def _review_with_retry(args, root, epic, review, policy, out, assignment) -> dict[str, Any]:
-    """Run one reviewer; in refinement and audit, retry a failed Claude or Codex reviewer once."""
+    """Run one reviewer; in refinement and audit, retry a failed mandatory reviewer or adjudicator once."""
     row = _run_reviewer(args, root, epic, review, policy, out, assignment)
-    standard = assignment["provider"] in policy["standard_reviewers"] and args.workflow in ("refine", "audit")
-    retries = policy["standard_reviewer_retries"] if standard else 0
-    for attempt in range(1, retries + 1):
+    mandatory = not assignment["reviewer"]["optional"] and args.workflow in ("refine", "audit")
+    for attempt in range(1, (policy["mandatory_retries"] if mandatory else 0) + 1):
         if row["status"] == "completed":
             break
-        first = f"{row['status']}: {row.get('error') or ''}"
-        row = {**_run_reviewer(args, root, epic, review, policy, out, assignment,
-                               f"{assignment['provider']}-retry{attempt}"), "retried_after": first}
+        first, spent = f"{row['status']}: {row.get('error') or ''}", row["duration_seconds"]
+        row = {**_run_reviewer(args, root, epic, review, policy, out, assignment, f"-retry{attempt}"),
+               "retried_after": first}
+        row["duration_seconds"] += spent
     return row
 
 
 def _round_lines(args, number: int, commit: str, rows: list[dict], size: dict | None) -> tuple[list[str], dict]:
     lines, resets = [f"## {args.workflow} {number} · {args.mission} · {now()}", f"- commit: {commit}"], {}
-    if args.replace:
-        lines.append(f"- replacement for {args.replace}, approved by: {' '.join(args.approved_by.split())}")
     for row in rows:
-        suffix = f" · fallback for {row['fallback_for']}" if row.get("fallback_for") else ""
-        lines.append(f"- reviewer {row['provider']} · {row['model']}/{row['effort']} · {row['status']} · "
-                     f"{row['decision'] or '-'}{suffix}")
+        lines.append(f"- {row['role']} {row['name']} · {row['model']}/{row['effort']} · {row['status']} · "
+                     f"{row['decision'] or '-'} · {round(row['duration_seconds'])}s"
+                     + (" · optional" if row["optional"] else ""))
         if row.get("retried_after"):
             lines.append(f"  - first attempt: {' '.join(row['retried_after'].split())[:300]}")
         if row.get("error"):
@@ -253,40 +276,25 @@ def _round_lines(args, number: int, commit: str, rows: list[dict], size: dict | 
             lines.append(f"- size: actual={size['actual_loc']} planned={size['planned_loc']} ratio={size['ratio']}")
         lines.append(f"- context: {' '.join(args.context.split())}")
     for row in (row for row in rows if row["status"] == "completed"):
-        provider = row["provider"]
-        replaced = row.get("fallback_for")
-        credited, note_prefix = (replaced, f"[fallback {provider}] ") if replaced else (provider, "")
+        name = row["name"]
         for index, finding in enumerate(row.get("findings", []), start=1):
-            heading = f"### {reviews.PREFIX[args.workflow]}{number}.{provider}.{index}"
+            heading = f"### {reviews.PREFIX[args.workflow]}{number}.{name}.{index}"
             lines += ["", f"{heading} · {finding['severity']} · {finding['category']}",
                       *(f"- {key}: {finding[key]}" for key in ("evidence", "correction", "closure")),
                       "- disposition: open"]
         for finding_id, (outcome, note) in row.get("outcomes", {}).items():
-            lines.append(f"- {finding_id} · {credited}: {outcome} — {note_prefix}{' '.join(note.split())}")
+            for credited in row["credit"].get(finding_id) or [name]:  # a replacement checks for the raiser (U18)
+                prefix = f"[by {name}] " if credited != name else ""
+                lines.append(f"- {finding_id} · {credited}: {outcome} — {prefix}{' '.join(note.split())}")
             if outcome in reviews.REOPENING:
-                resets[finding_id] = f"{outcome} by {provider}"
+                resets[finding_id] = f"{outcome} by {name}"
         if args.mission == "diagnose":
-            lines.append(f"- {args.finding} · {provider}: diagnosis — see Diagnosis ({provider}) below")
+            lines.append(f"- {args.finding} · {name}: diagnosis — see Diagnosis ({name}) below")
         extra = {"full": "Suggestions", "diagnose": "Diagnosis", "check": "Rationale"}.get(args.mission)
         body = section(row["text"], extra) if extra else None
         if body and body.lower() not in ("none", "- none"):
-            lines += ["", f"#### {extra} ({provider})", "", body]
+            lines += ["", f"#### {extra} ({name})", "", body]
     return lines, resets
-
-
-def _replacement(args, review: reviews.Review, policy: dict[str, Any], assignments: list[dict]) -> list[dict]:
-    """The fallback takes over one standard reviewer's work, only with the user's recorded approval."""
-    fallback = policy["fallback_reviewer"]
-    if args.replace not in policy["standard_reviewers"] or not args.approved_by:
-        raise ScopeError("--replace names claude or codex and needs --approved-by with the user's approval")
-    replaced = [{**a, "provider": fallback, "fallback_for": args.replace} for a in assignments
-                if a["provider"] == args.replace]
-    if not replaced:
-        raise ScopeError(f"no {args.mission} work is assigned to {args.replace}")
-    if args.mission == "adjudicate" and any(fallback in reviews.raisers(review, key)
-                                            for a in replaced for key in a["findings"]):
-        raise ScopeError(f"{fallback} raised a finding under adjudication; it cannot replace {args.replace}")
-    return replaced
 
 
 def cmd_review(args: argparse.Namespace) -> None:
@@ -298,9 +306,10 @@ def cmd_review(args: argparse.Namespace) -> None:
     review = reviews.parse(path)
     if args.recheck and args.mission != "verify":
         raise ScopeError("--recheck applies to the verify mission")
-    assignments = _assignments(args, review, policy)
-    if args.replace:
-        assignments = _replacement(args, review, policy, assignments)
+    chosen = reviews.settings(review, args.workflow, root, policy)
+    if args.workflow != "implement" and not chosen["adjudicator"]:
+        raise ScopeError(NO_ADJUDICATOR.format(workflow=args.workflow))  # L30
+    assignments = _assignments(args, review, chosen)
     number = reviews.next_round(review, args.workflow)
     if args.workflow == "refine":
         commit_paths(root, [epic], f"refine({args.epic}): plan revision for review round {number}")
@@ -324,16 +333,6 @@ def cmd_review(args: argparse.Namespace) -> None:
     })
 
 
-def cmd_preflight(args: argparse.Namespace) -> None:
-    policy = load_policy()
-    default = [*policy["standard_reviewers"], policy["fallback_reviewer"]]
-    names = args.providers.split(",") if args.providers else default
-    timeout, minimums = policy["timeouts_seconds"]["preflight"], policy["min_cli_versions"]
-    emit({name: providers.preflight(name, policy["reviewers"]["audit"][name]["model"], timeout,
-                                    minimums.get(name)) or "ready"
-          for name in names})
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -350,13 +349,10 @@ def main() -> None:
         sub.add_argument("--host", choices=("claude", "codex"), required=True)
         sub.add_argument("--epic", required=True)
         sub.add_argument("--root")
-    review.add_argument("--providers")
+    review.add_argument("--reviewers", help="comma list of this epic's reviewers to run (default: all)")
     review.add_argument("--recheck", action="store_true", help="verify: also re-send closed findings to their raiser")
-    review.add_argument("--replace", help="run the fallback in place of this standard reviewer (needs --approved-by)")
-    review.add_argument("--approved-by", help="the user's explicit approval of the replacement")
-    commands.add_parser("preflight").add_argument("--providers")
     args = parser.parse_args()
-    run_cli({"work": cmd_work, "review": cmd_review, "preflight": cmd_preflight}[args.command], args)
+    run_cli({"work": cmd_work, "review": cmd_review}[args.command], args)
 
 
 if __name__ == "__main__":

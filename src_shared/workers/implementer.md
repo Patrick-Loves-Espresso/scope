@@ -74,10 +74,12 @@ When the assignment asks you to resolve audit findings in `review.md`, address
 every finding whose disposition is `open`: fix it and set
 `disposition: fixed — <what changed>`, or reject it with
 `disposition: rejected — <reason>` (out of scope or hypothetical, with
-evidence). Use `duplicate of <id>` for repeats. A minor fix may not add a
-requirement or mechanism: raise the heading severity to `major` and fix it
-properly, or set `disposition: disproportionate — <what the fix would add>`.
-Commit each fix with its tests. Edit only disposition lines and heading
+evidence). When findings describe the same issue, keep the earliest and mark
+each other one `duplicate of <earliest id>`, across reviewers too; Scope's
+reviewer metrics count unique findings from these marks. A minor fix may not
+add a requirement or mechanism: raise the heading severity to `major` and fix
+it properly, or set `disposition: disproportionate — <what the fix would
+add>`. Commit each fix with its tests. Edit only disposition lines and heading
 severities in `review.md`.
 
 ## Boundaries

@@ -1,17 +1,19 @@
-"""A scripted stand-in for the claude, codex, opencode, and agy CLIs.
+"""A scripted stand-in for the claude, codex, and opencode CLIs.
 
 It answers the preflight probes, then plays the planner, implementer, or
 reviewer named at the top of the prompt, writing real files and commits in the
-sample project. Environment knobs:
+sample project. A knob's comma list names CLIs or reviewer names (derived from
+`--model`, as Scope does). Environment knobs:
 
 - FAKE_STATE: directory for the call log (required)
-- FAKE_UNAVAILABLE: comma list of providers whose --version fails
+- FAKE_UNAVAILABLE: comma list of CLIs whose --version fails
 - FAKE_VERSION: version every fake prints (default 9.9.9)
 - FAKE_FAIL: comma list of providers that exit 2 on a job
 - FAKE_FAIL_ONCE: comma list of providers that exit 2 on their first job only
 - FAKE_HANG: comma list of providers that sleep on a job
 - FAKE_INVALID: comma list of providers that return malformed reviews
-- FAKE_REFINE_FINDER / FAKE_AUDIT_FINDER: provider raising the one major finding
+- FAKE_REFINE_FINDER / FAKE_AUDIT_FINDER: reviewer raising the one major finding
+- FAKE_MINOR_FINDER: reviewer raising one minor finding in every full review
 - FAKE_PYTHON: interpreter the sample plan uses for pytest
 - FAKE_OVERSIZE: implementer writes far more code than planned
 - FAKE_DISPOSITION: disposition line authors write (default: fixed)
@@ -32,10 +34,12 @@ import time
 from sample import CRITERIA, PLAN
 
 PROVIDER, ARGS = sys.argv[1], sys.argv[2:]
+MODEL = ARGS[ARGS.index("--model") + 1] if "--model" in ARGS else ""
+NAME = re.sub(r"[^a-z0-9-]+", "-", MODEL.rsplit("/", 1)[-1].lower()).strip("-")
 
 
 def listed(name: str) -> bool:
-    return PROVIDER in os.environ.get(name, "").split(",")
+    return bool({PROVIDER, NAME} - {""} & set(os.environ.get(name, "").split(",")))
 
 
 def git(*args: str) -> str:
@@ -162,10 +166,15 @@ def reviewer(prompt: str) -> str:
     if listed("FAKE_INVALID"):
         return "I looked around and it seems fine."
     mission = field(prompt, r"- Mission: (\w+)")
-    ids = re.findall(r"^### ([RA]\d+\.[a-z]+\.\d+) · ", prompt, re.MULTILINE)
+    ids = re.findall(r"^### ([RA]\d+\.[a-z][a-z0-9-]*\.\d+) · ", prompt, re.MULTILINE)
     if mission == "full":
         workflow = "audit" if "## Focus: audit" in prompt else "refine"
-        if PROVIDER == os.environ.get(f"FAKE_{workflow.upper()}_FINDER", ""):
+        if listed("FAKE_MINOR_FINDER"):
+            return (
+                "DECISION: changes_required\n\n## Findings\n\n### F1\n- severity: minor\n- category: docs\n"
+                "- evidence: the plan has no example\n- correction: add one\n- closure: an example exists\n"
+            )
+        if listed(f"FAKE_{workflow.upper()}_FINDER"):
             return (
                 "DECISION: changes_required\n\n## Findings\n\n### F1\n- severity: major\n- category: tests\n"
                 "- evidence: plan.md does not say how names are trimmed\n- correction: state it\n"
@@ -219,7 +228,7 @@ def main() -> None:
         print("--output-last-message --ignore-user-config --sandbox")
         return
     if ARGS[:1] == ["models"]:
-        print("meta/muse-spark-1.3-contributor\ngemini-3.1-pro-high")
+        print("meta/muse-spark-1.3-contributor\nzai/glm-5.3\nmoonshot/kimi-v3")
         return
     prompt = sys.stdin.read() if PROVIDER in ("claude", "codex") else ARGS[-1]
     with Path(os.environ["FAKE_STATE"], "calls.jsonl").open("a") as log:
@@ -227,16 +236,19 @@ def main() -> None:
             json.dumps(
                 {
                     "provider": PROVIDER,
-                    "args": ARGS[:-1] if PROVIDER in ("opencode", "agy") else ARGS,
+                    "name": NAME,
+                    "args": ARGS[:-1] if PROVIDER == "opencode" else ARGS,
                     "cwd": os.getcwd(),
                     "first_line": prompt.splitlines()[0],
+                    "data_home": os.environ.get("XDG_DATA_HOME"),
+                    "auth": Path(os.environ.get("XDG_DATA_HOME", "/nonexistent"), "opencode", "auth.json").is_file(),
                 }
             )
             + "\n"
         )
     if listed("FAKE_HANG"):
         time.sleep(60)
-    once = Path(os.environ["FAKE_STATE"], f"failed-once-{PROVIDER}")
+    once = Path(os.environ["FAKE_STATE"], f"failed-once-{NAME or PROVIDER}")
     if listed("FAKE_FAIL_ONCE") and not once.exists():
         once.touch()
         print("transient provider error", file=sys.stderr)

@@ -32,17 +32,35 @@ Callers need a function that greets a person by name.
 """
 
 
+# Reviewer names derive from the model string (U23): claude, codex, and glm-5-3 here.
+REVIEWERS = """\
+refine:
+  reviewers:
+    - {cli: claude, model: claude, effort: high}
+    - {cli: codex, model: codex, effort: high}
+  adjudicator: {cli: opencode, model: zai/glm-5.3, effort: high}
+audit:
+  reviewers:
+    - {cli: claude, model: claude, effort: xhigh}
+    - {cli: codex, model: codex, effort: xhigh}
+  adjudicator: {cli: opencode, model: zai/glm-5.3, effort: high}
+"""
+
+
 def git(root: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
 
 
 @pytest.fixture
 def fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Fake claude/codex/opencode/agy on PATH; returns the state directory with calls.jsonl."""
-    bin_dir, state = tmp_path / "bin", tmp_path / "state"
+    """Fake claude/codex/opencode on PATH and a fake OpenCode auth.json; returns the state directory."""
+    bin_dir, state, data = tmp_path / "bin", tmp_path / "state", tmp_path / "xdg-data"
     bin_dir.mkdir()
     state.mkdir()
-    for name in ("claude", "codex", "opencode", "agy"):
+    (data / "opencode").mkdir(parents=True)
+    (data / "opencode" / "auth.json").write_text("{}")
+    monkeypatch.setenv("XDG_DATA_HOME", str(data))
+    for name in ("claude", "codex", "opencode"):
         wrapper = bin_dir / name
         wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" {name} "$@"\n')
         wrapper.chmod(0o755)
@@ -71,6 +89,8 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     epic = root / "docs" / "epics" / "DEMO-001-greeting"
     epic.mkdir(parents=True)
     (epic / "details.md").write_text(DETAILS)
+    (root / ".scope").mkdir()
+    (root / ".scope" / "reviewers.yaml").write_text(REVIEWERS)
     (root / ".gitignore").write_text("tmp_debug/\nwip/\n__pycache__/\n.claude/\nplugins/\n")
     (root / "pytest.ini").write_text("[pytest]\npythonpath = src\n")
     git(root.parent, "init", "-q", "-b", "main", str(root))

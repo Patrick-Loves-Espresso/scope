@@ -9,21 +9,17 @@ workers:
     planner: {model: gpt-6-astra, effort: xhigh}
     implementer: {model: gpt-6-sol, effort: xhigh}
 
-# Independent reviewers. Refinement runs at high effort (plan §4.3).
-reviewers:
+# Reviewers used until the project chooses its own with /scope_reviewers (stored in
+# .scope/reviewers.yaml, which a reinstall never touches). Refinement runs at high effort
+# (plan §4.3). There is no default adjudicator: Scope cannot assume credits for any model (U25).
+default_reviewers:
   refine:
-    claude: {model: claude-opus-5-5, effort: high}
-    codex: {model: gpt-6-astra, effort: high}
-    opencode: {model: meta/muse-spark-1.3-contributor, effort: high}
-    agy: {model: gemini-3.1-pro-high, effort: high}
+    - {cli: claude, model: claude-opus-5-5, effort: high}
+    - {cli: codex, model: gpt-6-astra, effort: high}
   audit:
-    claude: {model: claude-opus-5-5, effort: xhigh}
-    codex: {model: gpt-6-astra, effort: xhigh}
-    opencode: {model: meta/muse-spark-1.3-contributor, effort: high}
-    agy: {model: gemini-3.1-pro-high, effort: high}
-standard_reviewers: [claude, codex]
-fallback_reviewer: opencode   # Muse Spark (D10); replaces Claude or Codex only with the user's approval
-standard_reviewer_retries: 1  # a failed Claude or Codex review in refinement or audit is retried once
+    - {cli: claude, model: claude-opus-5-5, effort: xhigh}
+    - {cli: codex, model: gpt-6-astra, effort: xhigh}
+mandatory_retries: 1  # a failed mandatory reviewer or adjudicator in refinement or audit is retried once
 
 # Preflight rejects an older CLI. Claude Code before 2.1.280 cannot run claude-opus-5-5.
 min_cli_versions:

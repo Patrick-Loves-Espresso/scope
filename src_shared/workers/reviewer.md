@@ -56,8 +56,9 @@ Write `None` under Findings when there are none, and `DECISION: approve`.
 
 ## Mission: verify
 
-You raised the findings listed in the assignment. Check only those findings,
-against their disposition and the current repository. Add nothing new.
+You raised the findings listed in the assignment, or check them for a
+reviewer that is no longer on this epic. Check only those findings, against
+their disposition and the current repository. Add nothing new.
 
 ```markdown
 DECISION: done
@@ -74,9 +75,10 @@ Use `verified` or `still_open` for a fixed finding, `rejection_accepted` or
 
 ## Mission: adjudicate
 
-A rejected finding was maintained by the reviewer who raised it. You are
-uninvolved. Examine the finding, the rejection, and the closure test from
-scratch, in the repository, and decide. Add nothing new.
+A rejected finding was maintained by the reviewer who raised it. You are the
+epic's adjudicator. Examine the finding, the rejection, and the closure test
+from scratch, in the repository, without deferring to either side, and
+decide. Add nothing new.
 
 ```markdown
 DECISION: done

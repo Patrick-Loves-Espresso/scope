@@ -76,7 +76,9 @@ finding whose disposition is `open`:
 - reject it with `disposition: rejected — <reason>` when it is
   disproportionate, out of scope, or hypothetical. Rejections are adjudicated
   independently, so give the evidence.
-- Mark a finding that repeats another as `duplicate of <id>`.
+- When findings describe the same issue, keep the earliest and mark each
+  other one `duplicate of <earliest id>`, across reviewers too; Scope's
+  reviewer metrics count unique findings from these marks.
 - A minor fix may not add a requirement or a mechanism. If it would, either
   change the finding's severity in its heading to `major` and fix it properly,
   or set `disposition: disproportionate — <what the fix would add>`; that

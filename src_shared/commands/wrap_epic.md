@@ -41,19 +41,20 @@ If it reports blocked, stop and report why:
   `/implement`);
 - verification missing or stale: `/implement` step 2;
 - audit open or failed: `/audit_epic`;
-- audit incomplete: retry the missing reviewer or the fallback, or wait for
-  the provider. Do not offer the waiver.
+- audit incomplete: retry the missing reviewer or wait for its provider; the
+  user may replace it for this epic in `/audit_epic`. Do not offer the
+  waiver.
 
 **Waiver, only when the user explicitly asks for it** for an incomplete audit,
-one per provider listed in `missing_reviews`:
+one per reviewer listed in `missing_reviews`:
 
 ```bash
-$PY "$S/scope_check.py" waive --epic $EPIC --missing <provider> \
+$PY "$S/scope_check.py" waive --epic $EPIC --missing <reviewer> \
   --approver "<user>" --reason "<the user's reason>"
 ```
 
 A waiver is recorded in `review.md` as a quality risk and waives only that
-provider's missing review: at least one independent review must have
+reviewer's missing review: at least one independent review must have
 completed, and every finding must still be closed. It never turns the audit
 into a pass. Run `scope_check.py gate2` again after recording it; that
 summary (a new commit, the audit shown as incomplete with the waiver) is what
@@ -66,8 +67,9 @@ Show the summary exactly as printed:
 - the branch commit SHA to be merged;
 - the diffstat, production code lines and new modules against the plan's
   estimate, the plan's length, and the concepts added (planned and actual);
-- the audit verdict, including rejected and adjudicated findings, accepted
-  quality tradeoffs, and any waiver;
+- the audit verdict, the reviewers and adjudicator who ran (a single
+  reviewer is flagged), rejected and adjudicated findings, accepted quality
+  tradeoffs, optional reviewers' open minor findings, and any waiver;
 - the verification summary;
 - the doc changes and the plan's decision log;
 - the commit list.

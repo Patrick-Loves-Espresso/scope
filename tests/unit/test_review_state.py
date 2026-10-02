@@ -57,7 +57,7 @@ def test_parse_reads_rounds_findings_outcomes_and_ignores_comments(tmp_path):
     assert review.rounds[0]["commit"] == SHA
     assert [r["status"] for r in review.rounds[0]["reviewers"]] == ["completed", "unavailable"]
     assert review.findings["R1.claude.1"].outcomes == [("claude", "verified", "note", 2)]
-    assert [row["provider"] for row in review.rounds[0]["reviewers"] if row["status"] == "completed"] == ["claude"]
+    assert [row["name"] for row in review.rounds[0]["reviewers"] if row["status"] == "completed"] == ["claude"]
 
 
 @pytest.mark.parametrize(
@@ -276,19 +276,30 @@ def test_diagnosis_counts_failed_rounds_not_reviewer_answers(tmp_path):
     assert state(tmp_path, *again, workflow="audit")["A1.claude.1"] == "needs_diagnosis"
 
 
-def test_fallback_rows_and_waivers_are_parsed(tmp_path):
+def test_rows_requests_and_waivers_are_parsed(tmp_path):
     review = parsed(
         tmp_path,
         "## audit 1 · full · t\n- commit: " + SHA + "\n"
-        "- reviewer claude · m/high · unavailable · -\n- reviewer opencode · m/high · completed · approve"
-        " · fallback for claude\n",
-        "## audit waiver · t\n- missing: codex\n- reason: down\n",
+        "- reviewer claude · m/high · unavailable · - · 3s\n"
+        "- reviewer glm-5-3 · zai/glm-5.3/high · failed · - · 12s · optional\n"
+        "- reviewer codex · m/xhigh · completed · approve · 300s\n",
+        "## audit 2 · adjudicate · t\n- commit: " + SHA + "\n"
+        "- adjudicator kimi-v3 · moonshot/kimi-v3/high · completed · done · 41s\n",
+        "## audit reviewers · t\n- requested: replace codex with glm\n"
+        "- reviewer claude · claude · claude-opus-5-5 · xhigh · mandatory\n"
+        "- reviewer glm-5-3 · opencode · zai/glm-5.3 · high · optional\n"
+        "- adjudicator kimi-v3 · opencode · moonshot/kimi-v3 · high\n- replaced codex by glm-5-3\n",
+        "## audit waiver · t\n- missing: claude\n- reason: down\n",
     )
-    rows = review.rounds[0]["reviewers"]
-    assert rows[0]["decision"] is None and rows[1]["fallback_for"] == "claude"
-    assert reviews.waived(review) == {"codex"}
-    assert reviews._succeeded(review.rounds[0], set())
-    assert not reviews._succeeded({"reviewers": [rows[0]]}, set())
+    first, adjudication = review.rounds[0]["reviewers"], review.rounds[1]["reviewers"]
+    assert [(row["name"], row["seconds"], row["optional"]) for row in first] == [
+        ("claude", 3, False), ("glm-5-3", 12, True), ("codex", 300, False)]
+    assert first[0]["decision"] is None and adjudication[0]["role"] == "adjudicator"
+    chosen = review.requests["audit"]
+    assert [(e["name"], e["optional"]) for e in chosen["reviewers"]] == [("claude-opus-5-5", False), ("glm-5-3", True)]
+    assert chosen["adjudicator"]["name"] == "kimi-v3" and chosen["replaced"] == {"codex": "glm-5-3"}
+    assert reviews.waived(review) == {"claude"}
+    assert reviews._succeeded(review.rounds[0], {"claude"}) and not reviews._succeeded(review.rounds[0], set())
 
 
 @pytest.mark.parametrize(
@@ -327,3 +338,15 @@ def test_decision_and_fields_tolerate_markdown():
     assert reviews.parse_findings(text) == [
         {"severity": "major", "category": "security", "evidence": "a", "correction": "b", "closure": "c"}
     ]
+
+
+def test_an_optional_reviewers_open_minor_never_blocks_but_its_major_does(tmp_path):
+    parts = [round_("audit", 1, "full", "claude", "glm-5-3"), finding("A1.glm-5-3.1", "minor"),
+             finding("A1.glm-5-3.2", "major"), finding("A1.claude.1", "minor")]
+    result = reviews.states(parsed(tmp_path, *parts), "audit", {"glm-5-3"})
+    assert result == {"A1.glm-5-3.1": "optional_minor", "A1.glm-5-3.2": "needs_disposition",
+                      "A1.claude.1": "needs_disposition"}
+    assert "optional_minor" in reviews.CLOSED
+    shared = [*parts[:1], finding("A1.glm-5-3.1", "minor"),
+              finding("A1.claude.1", "minor", disposition="duplicate of A1.glm-5-3.1")]
+    assert reviews.states(parsed(tmp_path, *shared), "audit", {"glm-5-3"})["A1.glm-5-3.1"] == "needs_disposition"
