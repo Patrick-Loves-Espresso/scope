@@ -67,6 +67,12 @@ def test_max_needs_an_explicit_request_and_the_defaults_have_no_adjudicator(proj
                                          expect=1)["error"]
     created = reviewers(project, "set", "--adjudicator", "opencode", "zai/glm-5.3", "high")
     assert created["audit"]["adjudicator"]["name"] == "glm-5-3" and created["audit"]["source"] == "project"
+    by_cli = reviewers(project, "set", "--workflow", "audit", "--replace", "codex", "opencode", "moonshot/kimi-v3",
+                       "xhigh")
+    assert [entry["name"] for entry in by_cli["audit"]["reviewers"]] == ["opus", "kimi-v3"]
+    reviewers(project, "set", "--workflow", "audit", "--add", "opencode", "zai/glm-5.3", "xhigh")
+    ambiguous = reviewers(project, "set", "--workflow", "audit", "--remove", "opencode", expect=1)["error"]
+    assert ambiguous == "no reviewer 'opencode'; reviewers: ['opus', 'kimi-v3', 'glm-5-3']"
     no_change = reviewers(project, "epic", "--epic", EPIC, "--workflow", "refine", "--requested", "x", expect=1)
     assert no_change["error"] == "no change requested"
     duplicate = request(project, "refine", "--add", "codex", "gpt-6.1-sol", "xhigh", expect=1)["error"]

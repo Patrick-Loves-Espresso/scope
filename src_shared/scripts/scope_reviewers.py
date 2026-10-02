@@ -29,9 +29,13 @@ def apply(current: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     chosen = {**current, "reviewers": list(current["reviewers"]), "replaced": dict(current["replaced"])}
 
     def index(name: str) -> int:
+        """A reviewer by name or exact model, or by CLI when exactly one reviewer uses that CLI."""
         for position, entry in enumerate(chosen["reviewers"]):
             if name in (entry["name"], entry["model"]):
                 return position
+        by_cli = [position for position, entry in enumerate(chosen["reviewers"]) if entry["cli"] == name]
+        if len(by_cli) == 1:
+            return by_cli[0]
         raise ScopeError(f"no reviewer {name!r}; reviewers: {[entry['name'] for entry in chosen['reviewers']]}")
 
     for name in args.remove or []:

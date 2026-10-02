@@ -49,8 +49,8 @@ and preflight status; the adjudicator; any problems and warnings. Then stop.
 
 ## Change
 
-Turn the user's words into one command, removals and replacements by
-reviewer name:
+Turn the user's words into one command. Removals and replacements name a
+reviewer, its exact model, or its CLI when only one reviewer uses that CLI:
 
 ```bash
 $PY "$S/scope_reviewers.py" set --workflow refine|audit|both \

@@ -370,6 +370,9 @@ adjudicator who ran and flags a single-reviewer audit.
   listing the Scope 1.x artifacts with globs. Metrics count runs including
   failed attempts (shown as `n (k failed)`); Gate 2 lists only reviewers that
   completed at least once.
+- L37: `--remove` and `--replace` accept a reviewer's name, its exact model,
+  or its CLI when exactly one reviewer uses that CLI, so "replace codex with
+  …" works with model-derived names; an ambiguous CLI name is refused.
 
 Resolved 2026-10-02: O1 → U23, O2 → U24, O3 → U25.
 
