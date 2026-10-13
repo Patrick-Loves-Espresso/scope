@@ -33,7 +33,8 @@ def code_line_numbers(text: str, filename: str) -> set[int]:
         lexer = get_lexer_for_filename(filename, stripnl=False, ensurenl=False)
     except ClassNotFound:
         return {number for number, line in enumerate(text.splitlines(), start=1) if line.strip()}
-    lines, number = set(), 1
+    lines: set[int] = set()
+    number = 1
     for token, value in lexer.get_tokens(text):
         if token not in Comment and token not in String.Doc:
             lines.update(number + offset for offset, part in enumerate(value.split("\n")) if part.strip())

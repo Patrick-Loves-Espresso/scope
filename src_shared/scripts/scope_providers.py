@@ -17,7 +17,7 @@ import signal
 import subprocess
 import tempfile
 import time
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 import psutil
 
@@ -107,8 +107,8 @@ def command(
     write: bool,
     output_path: Path,
     prompt: str,
-    read_only_commands: list[str] = (),
-    add_dirs: list[Path] = (),
+    read_only_commands: Sequence[str] = (),
+    add_dirs: Sequence[Path] = (),
 ) -> list[str]:
     """Build the provider command line; stdin providers receive the prompt on stdin."""
     if provider == "claude":
@@ -178,7 +178,8 @@ def run(
 ) -> dict[str, Any]:
     """Run one provider process to completion or timeout."""
     executable = shutil.which(argv[0]) or argv[0]
-    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}
+    # Windows-only constant; mypy cannot see the os.name guard.
+    group = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {"start_new_session": True}  # type: ignore[attr-defined]
     started = time.monotonic()
     timed_out = False
     with _isolated(provider) as private, stdout_path.open("wb") as stdout, stderr_path.open("wb") as stderr:

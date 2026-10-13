@@ -421,6 +421,19 @@ check_lifecycle_contract() {
   grep -n 'story_complexity_max: 7' src_shared/config/scope-policy.yaml
 }
 
+check_lint_types() {
+  local python
+
+  section "Lint and type checks"
+
+  python="$(python_cmd)"
+  "$python" -m ruff --version >/dev/null 2>&1 && "$python" -m mypy --version >/dev/null 2>&1 ||
+    fail "ruff and mypy are required; run: python3 -m pip install -r requirements-dev.txt"
+  mkdir -p tmp_debug
+  "$python" -m ruff check --cache-dir tmp_debug/ruff-cache src_shared/scripts tests
+  "$python" -m mypy --ignore-missing-imports --cache-dir tmp_debug/mypy-cache src_shared/scripts
+}
+
 check_tests() {
   local python
 
@@ -451,6 +464,7 @@ main() {
   check_codex_override_sources
   check_lifecycle_contract
   check_budgets
+  check_lint_types
   check_tests
 
   section "All PR checks passed"
