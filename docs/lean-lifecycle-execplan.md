@@ -243,6 +243,9 @@ keep the original wording where it still holds.
   with the real Codex CLI
 - [x] 2026-10-02 Claude models switched to the `opus` alias (U27); not yet run
   with the real Claude CLI
+- [x] 2026-10-13 Lint and type checks (U33) on branch `chore/lint-type-gate`:
+  ruff and mypy in Scope's own PR gate (four mypy errors fixed), and
+  `scope_check.py plan` requires `lint` and `types` checks in every plan
 
 ## Configurable reviewers (U14–U25, implemented 2026-10-02)
 
@@ -437,6 +440,7 @@ duplicating a reviewer); `git diff --check`;
 | L21 | The changed-criteria diff is a `difflib` unified diff of the approved blob against the current text (labels `approved`, `current`) | Without `hash-object -w` the current blob is not in the object store, so `git diff <blob> <blob>` cannot run |
 | L22 | Working papers are suggested as `notes/<story>.md` in the epic folder; nothing enforces the name | A concrete example helps agents; the destination rule (§4.7) already allows it |
 | L12 | Stale references to removed artifacts are fixed where they occur (`/audit_decisions`, `details.md` template, Codex docs); `/prd_breakdown` is left unchanged per plan | Removal consequence, not new design |
+| U33 | Scope's PR gate runs ruff (scripts and tests) and mypy (scripts); `scope_check.py plan` refuses a plan whose validation lacks a `lint` or a `types` check, unless the plan lists the missing one in `unavailable_evidence` with a reason; the required ids are `required_checks` in the policy (user, 2026-10-12; numbered after U29–U32 on `feat/director-cohabitation`) | Scope's own code had no lint or type gate; the planner was told to declare lint and type checks, but nothing enforced it, and SAG-113 already used the ids `lint` and `types` |
 
 ## Codex review #1 (design) dispositions
 

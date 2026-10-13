@@ -48,7 +48,9 @@ below, then stop.
   and the criteria each story delivers. The story estimates sum to the plan
   estimate.
 - Validation commands that write JUnit XML with standard tooling, lint and type
-  checks, and a coverage check of new and changed code. Handle the baseline's
+  checks with the ids `lint` and `types` (a project without such a tool lists
+  the id in `unavailable_evidence` with the reason), and a coverage check of
+  new and changed code. Handle the baseline's
   failures as the user decided at Gate 1. Map every criterion to the tests that
   prove it.
 - `production_paths` and `test_paths`, plus `expected_paths` for anything else

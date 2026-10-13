@@ -72,7 +72,7 @@ validation:
 acceptance_tests:
   AC-001: ["tests/test_greet.py::test_greets_by_name"]
   AC-002: ["tests/test_greet.py::test_rejects_empty_name", "command:lint"]
-unavailable_evidence: []
+unavailable_evidence: [{id: types, reason: "the sample has no type checker"}]
 ```
 
 ## Documentation obligations

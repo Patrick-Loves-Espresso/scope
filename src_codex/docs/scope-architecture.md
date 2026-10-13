@@ -154,7 +154,9 @@ tests, lint, and type checks and records pre-existing failures under
 approves the criteria, the size estimate, the "not building" list, and the
 baseline as shown; `scope_check.py approve` commits the file and records its
 git blob hash and commit in `approvals.yaml`.
-A planner job then writes `plan.md`, which `scope_check.py plan` checks. One
+A planner job then writes `plan.md`, which `scope_check.py plan` checks; its
+validation must declare a `lint` and a `types` check (`required_checks` in the
+policy), or list a missing tool in `unavailable_evidence` with the reason. One
 full review by the epic's reviewers follows, and the orchestrator loops on
 `scope_review.py status` (section 7) until the review is settled.
 
