@@ -243,6 +243,9 @@ keep the original wording where it still holds.
   with the real Codex CLI
 - [x] 2026-10-02 Claude models switched to the `opus` alias (U27); not yet run
   with the real Claude CLI
+- [x] 2026-10-02 Director cohabitation (U29, U30) on branch
+  `feat/director-cohabitation`: open questions verified (V1–V10, below);
+  design L38–L43 proposed; O4–O7 decided (U31), O8 decided (U32), O9 open
 
 ## Configurable reviewers (U14–U25, implemented 2026-10-02)
 
@@ -383,6 +386,97 @@ duplicating a reviewer); `git diff --check`;
 `./scripts/validate-pr-checks.sh` (budgets, install smoke with an existing
 `.scope/config.yaml` preserved); mirrored docs.
 
+## Director cohabitation (U29–U30; design proposed 2026-10-02)
+
+Goal: Scope cohabits with Director (D16 as amended by U29) and stays fully
+usable without it. Every change is a no-op or harmless without Director, and
+the PR gate and CI keep passing on machines without it.
+
+**Verified 2026-10-02.** Sources: Director at `c939958` (read-only), Codex
+0.160.0 source (`rust-v0.160.0`), OpenCode 1.18.34 source (`v1.18.34`).
+Runtime tests used a logging hook, Director's real shims in front of a fake
+`director` binary, a throwaway `CODEX_HOME`, and `claude --settings`; no global
+setting was changed. Evidence: `tmp_debug/director-hooks-test/`.
+
+| # | Question | Answer | How |
+|---|---|---|---|
+| V1 | Do Scope's Codex processes get Director today? | No. Codex stores hook trust in `config.toml` (`hooks.state.<key>.trusted_hash`), and `--ignore-user-config` empties that layer: `hooks.json` hooks are found but silently skipped, even after the user trusted them. Plan §8 ("would receive the injection") is wrong for 0.160.0. `--dangerously-bypass-hook-trust` would run them; Scope does not pass it | Runtime: trusted hooks under plain `exec` called Director twice; under `exec --ignore-user-config`, zero calls and no warning; with the bypass flag they ran |
+| V2 | Codex subagents | `spawn_agent` children fire `SubagentStart`/`SubagentStop`, not `SessionStart`/`Stop`, so Director does not inject into them; Pre/PostToolUse fire for them; they share the parent's configuration, trust, and environment. openai/codex#16226 is outdated | Source |
+| V3 | Do hooks inherit the launcher's environment? | Yes. Codex passes its whole environment minus five auth variables (not filtered by `shell_environment_policy`) and runs hooks outside the sandbox; Claude Code passes its environment too | Runtime (marker variable); source |
+| V4 | Does `DIRECTOR_BIN=<missing path>` disable Director? | Yes. Trusted Codex hooks ran, Director's shims exited 0, `director` was never called. Director's OpenCode plugin tries only `DIRECTOR_BIN` when it is set | Runtime (Codex); source (`director.js`) |
+| V5 | OpenCode `run --pure` | Skips every external plugin of the main loader, including files in `~/.config/opencode/plugin/`. A second loader is not gated, but it only registers plugins of a newer shape, which `director.js` is not. A top-level `opencode run` has no `parentID`, so `director.js` would treat it as a top-level session | Source |
+| V6 | Claude `--safe-mode` | Hooks do not load (zero calls from a logging hook passed with `--settings`); the global `CLAUDE.md` does not load either | Runtime; CLI reference |
+| V7 | Native subagents of the orchestrating Claude session | No `SessionStart` (`SubagentStart` instead), so no injection. PostToolUse fires with the parent's `session_id` and `transcript_path` plus `agent_id`, and its `additionalContext` reaches the subagent only. Director treats these calls as the parent's: it heartbeats, and its opt-in handoff nudge (off by default, Claude Code only) can be delivered to a subagent and used up there (one marker per session). A Director issue; Scope's commands use no native subagents | Runtime; Director source |
+| V8 | Global instruction files | Codex loads `$CODEX_HOME/AGENTS.md` under `--ignore-user-config` (no flag skips it); OpenCode loads `~/.claude/CLAUDE.md` even with `--pure` when `~/.config/opencode/AGENTS.md` is absent (`OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1` skips it); Claude safe mode loads neither. Not Director-related | Source; runtime for Claude |
+| V9 | `.director/` | Director writes `<worktree>/.director/workstream-id` and `repo-key` on every SessionStart and PostToolUse in any git repository, adopted or not. Claude Code hooks follow the Bash tool's `cd`, so the orchestrator writes it in `wip/<epic>` as well. Director's design spec leaves commit or ignore to the repository owner | Director source; runtime (hook `cwd` after `cd`) |
+| V10 | Exclude location | Git does not read `info/exclude` under a linked worktree's `--git-dir`; only `<--git-common-dir>/info/exclude` applies to every worktree. `/session-handoff` Step 1 uses `--git-dir`, so its exclude has no effect in `wip/<epic>` | Runtime (temporary repository) |
+
+**Proposed design** (implementer proposals; confirmed only by the user's
+decisions on O4–O9):
+
+- L38 Director's context and writes reach only the orchestrating session.
+  Every process Scope launches (planner, implementer, reviewers, adjudicator,
+  checks, diagnoses) runs with `DIRECTOR_BIN` set to a path that cannot exist
+  (`<os.devnull>/scope-disables-director`), in `scope_providers.run()`. One
+  fixed rule, no configuration; the value is a module constant like the CLI
+  flags. Claude (safe mode) and Codex (trust in `config.toml`) are exempt today
+  only through CLI details that can change (V1, V6); this makes the rule
+  explicit and covers OpenCode as well. One line plus a test.
+- L39 Scope adds `.director/` to `<git common dir>/info/exclude`
+  idempotently in `scope_common.repo_root()`, which every script command
+  calls. Unconditional: an unused line without Director. Not a tracked
+  `.gitignore` line (Scope edits no project file outside its artifacts, and
+  `/session-handoff` already uses the exclude), and not a filter in Scope's
+  checks alone: an implementer's `git add -A` would commit the epic's
+  workstream id, and the merge into a main checkout holding its own untracked
+  `.director/` would then fail.
+- L40 `/session-handoff` gets a Step 0 (U30). The file is shared, so Claude
+  and Codex stay mirrored; each host names its own Director command.
+- L41 Docs: a short, optional "Running Scope with Director" section in
+  `README.md` and the Codex copy (who sees Director, the exclude, where each
+  fact lives); one paragraph in `docs/scope-architecture.md` §6 and the Codex
+  copy; plan §8 and D16 updated in revision 8 (U29, U30, V1).
+- L42 `/wrap_epic` stays as it is (Gate 2, the pinned merge, worktree
+  removal, CodeGraph sync, the `/sync_product` recommendation); Director
+  replaces none of it. Proposed: no Director line in it or in any lifecycle
+  prompt, because Director's injected protocol already tells the orchestrating
+  session to suggest `/director:complete` after a merge. Caveat, from Director's code (not run):
+  the orchestrator starts in the main checkout and only heartbeats the
+  `epic/<id>` workstream from `wip/<epic>`. That leaves a fleet row without a
+  branch or directory, which never reads `gone`, so `/director:complete`'s
+  sibling form stops and asks. This is a Director gap for sessions that move
+  between worktrees; it is documented, not worked around.
+- L43 One home per fact. The epic's scope and approvals live in
+  `acceptance-criteria.md` and `approvals.yaml`. How the epic is built,
+  including the user's rulings and limits that workers must respect, lives in
+  `plan.md` (one line each). Rules for every agent in the project go in the
+  project's `CLAUDE.md`/`AGENTS.md`: Claude workers are told to read it, and
+  Codex loads it. Durable decisions go in ADRs. Orchestration-only state
+  goes in Director's handoff when installed, else `session-handoff.md`: where
+  the session stopped, what is paused, in-flight jobs, permissions such as
+  pushing, and spend against caps. The handoff points to the files above
+  instead of restating them. Scope never runs `director promote`; grooming
+  stays with the user.
+
+**Open questions for the user.**
+
+- O4 Confirm L38: no Director context or writes in any Scope-launched process,
+  one fixed rule.
+- O5 Confirm L39 (the exclude, written by `repo_root()`), or choose another
+  writer (installer, or a prompt step).
+- O6 Fix `/session-handoff`'s exclude in worktrees (V10, one word,
+  `--git-common-dir`) in this change?
+- O7 Global instruction files (V8): leave as is, disable `~/.claude/CLAUDE.md`
+  for OpenCode reviewers only, or something else? Isolating `CODEX_HOME` would
+  need a copy of the Codex login and is not recommended.
+
+Resolved 2026-10-02: O4–O7 → U31. Resolved 2026-10-03: O8 → U32. O9 remains
+open.
+- O8 Confirm L42 (no `/wrap_epic` line) and L43 (no `director promote` in
+  Scope).
+- O9 A run with a real Director needs a download (Go through Homebrew to build
+  it, or a Director release binary): sandboxed run, real install, or none?
+
 ## Decision log
 
 | ID | Decision | Why |
@@ -416,6 +510,10 @@ duplicating a reviewer); `git diff --check`;
 | U26 | Codex models: `gpt-6-astra` (planner, default reviewers) and `gpt-6-sol` (implementer, Codex developer agent) become `gpt-6.1-sol`, efforts unchanged (user, 2026-10-02) | User choice; GPT-6.1 Sol was released 2026-09-29 and supports `xhigh`; the local Codex CLI is 0.160.0, and no minimum CLI version for it is documented |
 | U27 | Claude models use Claude Code aliases that follow the latest model of the family: `opus` for the planner, implementer, default reviewers, and developer agent (architect and product-owner already did); per-version reviewer comparison is not needed (user, 2026-10-02) | Always the latest Opus without editing Scope; Codex has no such alias, so `gpt-6.1-sol` stays pinned. A new Opus arrives with a Claude Code update, and `min_cli_versions` keeps an outdated CLI from resolving `opus` to an older model |
 | U28 | The Claude implementer stays on `opus`; Sonnet 5.5 as implementer is not trialed for now (user, 2026-10-02) | Sonnet 5.5 leads Opus 5.5 on Terminal-Bench but trails on SWE-Bench Pro (81.3% vs 89.9%), the benchmark closest to the implementer's job; a later trial would compare audit findings, fix rounds, size, and `ccusage` tokens against SAG-113 |
+| U29 | Scope cohabits with Director and keeps working for users who never install it: Director support is optional, and every change is a no-op or harmless without it. `/session-handoff` is not retired: with Director installed it sends the user to Director's handoff (Claude `/director:handoff`, Codex `$director-handoff`); without it, it writes today's handoff (user, 2026-10-02; amends D16) | Director is optional; Scope must stay complete on its own |
+| U30 | `/session-handoff` counts Director as installed when `${DIRECTOR_HUB:-$HOME/.director}/projects` is a directory and the `director` binary exists (`command -v director`, or `<hooks dir>/../bin/director` with the hooks dir `${DIRECTOR_HOOKS_DIR:-$HOME/.claude/director/hooks}`, shared by Claude Code, Codex, OpenCode, and Copilot installs). It then tells the user to run Director's handoff and stops; it never invokes Director itself. No per-repository adoption check: Director adopted for another repository also sends the user to Director's handoff, an accepted limitation (user, 2026-10-02) | The hub survives `director uninstall`, so the folder alone could point at a missing command; a per-repository check would copy Director's repo-key derivation, which a fresh worktree has not persisted yet |
+| U31 | Director cohabitation as recommended (user, 2026-10-02): O4, Director's context and writes reach only the orchestrating session, one fixed rule (L38); O5, `scope_common.repo_root()` writes `.director/` to the common-dir exclude (L39); O6, `/session-handoff`'s exclude moves to `--git-common-dir` in this change; O7, the global instruction files that Codex and OpenCode load stay as they are | The user's global rules are written for every agent; isolating Codex would need a copy of its login |
+| U32 | O8 as recommended (user, 2026-10-03): `/wrap_epic` and the other lifecycle prompts get no Director line (L42; `/wrap_epic` itself is unchanged), and Scope never runs `director promote`: grooming Director's log stays with the user (L43) | Director's injected protocol already suggests `/director:complete` after a merge; matching log entries to ADRs is a judgment call, and only the orchestrating session writes to Director |
 | L18 | Completeness is judged on the content of the latest full round (all full rounds on that content count); freshness still needs a successful round | A partly failed round no longer lists the provider that completed as missing |
 | L1 | The implementer invokes the runner (`size` after each story, `run` at milestones); the orchestrator runs final verification | Only way to check per story inside one implementer job; numbers still come from the runner |
 | L2 | `/implement` executes `audit_epic.md` in-session, as today | Keeps user stops at the two gates |
@@ -516,3 +614,17 @@ Suggestions taken: script paths quoted in prompts; commands run with `sh -c`
   Progress log 394, Approach 267, Validation 182. One story note told the
   implementer to record commands and diffs in the progress log, which is where
   the transcripts came from. U12 bounds the logs; story notes are not bounded.
+- 2026-10-02 Codex workers and reviewers never received Director's injection:
+  hook trust lives in `config.toml`, which `--ignore-user-config` skips (V1).
+  Plan §8 assumed the opposite. The exemption is accidental, which is why L38
+  sets `DIRECTOR_BIN` anyway.
+- 2026-10-02 OpenCode reviewers load the user's global `~/.claude/CLAUDE.md`
+  (V8), as Codex loads `~/.codex/AGENTS.md`; Claude workers in safe mode load
+  neither. The user's global rules therefore reach some reviewers and not
+  others (O7).
+- 2026-10-02 `/session-handoff`'s local exclude has never worked in a linked
+  worktree: it writes `info/exclude` under `--git-dir`, which git ignores
+  there (V10, O6).
+- 2026-10-02 Director writes `.director/` in every git repository where a
+  hooked session runs, adopted or not (V9), so the exclude matters as soon as
+  Director is installed anywhere on the machine.
