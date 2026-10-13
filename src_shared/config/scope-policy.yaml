@@ -39,6 +39,10 @@ size:
   module_limit_code_lines: 450
   story_complexity_max: 7
 
+# Checks every plan declares by these validation ids (type: check), or lists in
+# unavailable_evidence with a reason when the project has no such tool.
+required_checks: [lint, types]
+
 # Read-only shell commands Claude reviewers may run (prefix match).
 reviewer_read_only_commands:
   - git diff

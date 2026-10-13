@@ -331,7 +331,8 @@ Install `requirements-dev.txt`, activate the hooks once with
 before committing. The gate checks whitespace, mirrored Claude/Codex files,
 the install smoke test (including removal of retired files), the complexity
 budgets (lifecycle Python ≤ 3,000 lines, modules ≤ 450 code lines, command
-prompts ≤ 150 lines, one policy file), and runs the test suite with
+prompts ≤ 150 lines, one policy file), lints the scripts and tests with ruff,
+type-checks the scripts with mypy, and runs the test suite with
 subprocess-aware coverage (minimum 90%).
 
 ## License

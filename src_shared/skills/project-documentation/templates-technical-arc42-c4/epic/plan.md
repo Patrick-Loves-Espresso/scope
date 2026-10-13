@@ -55,8 +55,10 @@ Scope's runner runs these with `sh -c` from the repository root, on a
 committed state. A test suite writes JUnit XML with its standard reporter to
 the `{junit}` path (pytest `--junitxml`, `gotestsum --junitfile`, a Jest JUnit
 reporter); a failing or skipped test without a reason fails the run.
-`type: check` commands (lint, types, coverage) count by exit code. Check
-coverage of new and changed code with a standard tool, for example
+`type: check` commands (lint, types, coverage) count by exit code. Every
+plan declares a `lint` and a `types` check; a project without such a tool
+lists the id in `unavailable_evidence` with the reason. Check coverage of new
+and changed code with a standard tool, for example
 `diff-cover coverage.xml --compare-branch=main --fail-under=90`.
 
 Map each criterion to the tests that prove it (`path::test` or the JUnit
@@ -70,6 +72,12 @@ validation:
   - id: unit
     type: test
     command: "python -m pytest tests/unit --junitxml={junit}"
+  - id: lint
+    type: check
+    command: "ruff check src tests"
+  - id: types
+    type: check
+    command: "mypy src"
 acceptance_tests:          # tests that prove each criterion; all must run and pass
   AC-001: ["tests/unit/test_example.py::test_example"]
 unavailable_evidence: []   # evidence that cannot run here: {id, reason}

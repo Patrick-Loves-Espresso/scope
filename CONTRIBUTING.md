@@ -61,8 +61,8 @@ This runs the same checks as GitHub Actions, including whitespace checks for
 staged and untracked files, mirrored Claude/Codex file changes, generated-file
 rejection, the install smoke test (including removal of retired files), the
 complexity budgets (lifecycle Python ≤ 3,000 lines, modules ≤ 450 code lines,
-lifecycle command prompts ≤ 150 lines, one policy file), and the test suite
-with its 90% coverage threshold.
+lifecycle command prompts ≤ 150 lines, one policy file), ruff and mypy on the
+scripts, and the test suite with its 90% coverage threshold.
 
 For quick manual install checks, you can also verify that installation propagates
 the files correctly:
