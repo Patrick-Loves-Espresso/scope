@@ -175,6 +175,7 @@ def run(
     stdout_path: Path,
     stderr_path: Path,
     timeout: float,
+    env: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Run one provider process to completion or timeout."""
     executable = shutil.which(argv[0]) or argv[0]
@@ -187,7 +188,7 @@ def run(
             process = subprocess.Popen(
                 [executable, *argv[1:]], cwd=cwd, stdout=stdout, stderr=stderr,
                 stdin=subprocess.PIPE if provider in STDIN_PROVIDERS else subprocess.DEVNULL,
-                env={**os.environ, "NO_COLOR": "1", **private}, **group,
+                env={**os.environ, "NO_COLOR": "1", **private, **(env or {})}, **group,
             )
         except OSError as exc:
             return {"exit_code": None, "timed_out": False, "duration_seconds": 0.0, "error": str(exc)}

@@ -241,7 +241,9 @@ only read tools and read-only `git`/`codegraph` commands; Codex runs `exec
 `workspace-write` for workers (implementers in a worktree also get the git
 directory via `--add-dir` so they can commit); OpenCode runs `--pure --agent
 plan` with a private data directory per run, because concurrent runs on its
-shared SQLite database fail. Preflight checks each CLI's version (against
+shared SQLite database fail. Claude workers run with background tasks
+disabled and shell timeouts raised to the job's limits, so a long test run
+stays in the foreground instead of dying when the `--print` session ends. Preflight checks each CLI's version (against
 `min_cli_versions` in the policy), flags, authentication, or model catalog.
 Reviewers run in parallel; there is no all-provider barrier. In refinement and
 audit, a failed mandatory reviewer or adjudicator is retried once. Scope never
@@ -330,9 +332,12 @@ validation command of the plan with a POSIX `sh -c` in its own process group
 a non-zero exit, a missing JUnit file, a failure or error in the XML, or a skip
 without a reason. Each criterion's mapped tests must have run and passed;
 `command:<id>` maps a criterion to an exit-code-only command and is recorded as
-such. Milestone runs require the criteria of finished stories; `final` and
-`remediation` runs require all. Coverage of new and changed code is checked by
-a standard tool declared as a `check` command.
+such. Milestone runs require a criterion once every story listing it is
+finished; `final` and `remediation` runs require all. Milestone runs also
+skip commands marked `final_only` (the `criteria` they alone prove are due
+only in the final run) and stop at the first failing command; final and
+remediation runs run every command. Coverage of new and changed code is
+checked by a standard tool declared as a `check` command.
 
 `scope_verify.py size` counts production code lines added since the epic
 branch forked (comments, docstrings, and blank lines excluded, by pygments)

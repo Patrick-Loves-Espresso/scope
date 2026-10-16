@@ -141,8 +141,12 @@ keep the original wording where it still holds.
 - A criterion passes when every reference matches at least one test case
   (boundary-aware suffix match on normalized `classname.name`) and all matches
   passed; `command:<id>` references pass by exit code and are recorded as
-  `passed_by_exit_code`. Milestone runs require criteria of `done` stories
-  (others `pending`); `final` and `remediation` require all.
+  `passed_by_exit_code`. Milestone runs require a criterion once every story
+  listing it is `done` (others `pending`); `final` and `remediation` require
+  all. Milestone runs skip `final_only` commands (the `criteria` they alone
+  prove, or that reference them as `command:<id>`, wait for the final run) and
+  stop at the first failing command, recording the rest as not run; final and
+  remediation runs run every command.
 - Coverage of a later commit: the latest run is `final`/`remediation`,
   passed, and only `verification.yaml`/`review.md` under `docs/epics/`
   changed since its tested commit.
@@ -246,6 +250,18 @@ keep the original wording where it still holds.
 - [x] 2026-10-13 Lint and type checks (U33) on branch `chore/lint-type-gate`:
   ruff and mypy in Scope's own PR gate (four mypy errors fixed), and
   `scope_check.py plan` requires `lint` and `types` checks in every plan
+- [x] 2026-10-16 Milestone criteria (U34) on branch
+  `fix/criterion-due-when-all-stories-done`: a criterion is required at a
+  milestone run only once every story listing it is done
+- [x] 2026-10-16 Fewer implementer stops (U35) on branch
+  `feat/fewer-implementer-stops`: final-only commands, fail-fast milestone
+  runs, foreground test runs for Claude workers, size estimates and checks,
+  base-branch merges before each implementer job, If-missed contingencies,
+  repository paths in criteria
+- [x] 2026-10-16 Parallel-friendly epics (U36) on the same branch:
+  `/prd_breakdown` decouples epic boundaries when cheap and judges parallel
+  tracks by what epics touch; `details.md` records Depends on, Can run
+  alongside, and Touches; the planner proposes parallel-friendly splits
 
 ## Configurable reviewers (U14–U25, implemented 2026-10-02)
 
@@ -441,6 +457,9 @@ duplicating a reviewer); `git diff --check`;
 | L22 | Working papers are suggested as `notes/<story>.md` in the epic folder; nothing enforces the name | A concrete example helps agents; the destination rule (§4.7) already allows it |
 | L12 | Stale references to removed artifacts are fixed where they occur (`/audit_decisions`, `details.md` template, Codex docs); `/prd_breakdown` is left unchanged per plan | Removal consequence, not new design |
 | U33 | Scope's PR gate runs ruff (scripts and tests) and mypy (scripts); `scope_check.py plan` refuses a plan whose validation lacks a `lint` or a `types` check, unless the plan lists the missing one in `unavailable_evidence` with a reason; the required ids are `required_checks` in the policy (user, 2026-10-12; numbered after U29–U32 on `feat/director-cohabitation`) | Scope's own code had no lint or type gate; the planner was told to declare lint and type checks, but nothing enforced it, and SAG-113 already used the ids `lint` and `types` |
+| U34 | A milestone run requires a criterion only once every story listing it is `done`, no longer as soon as one of them is; `final` and `remediation` runs still require every criterion (user, 2026-10-16, who left the choice of fix to the implementer) | Planners list a criterion on every story that contributes to it, so the first finished story made the criterion due while its last tests were still to be written, and implementation stalled on "mapped tests missing" (seen in a Sagara epic; SAG-131's plan has 10 such criteria). Flagging this in `scope_check.py plan` instead was rejected: the plan does not record which story writes which test. Nothing is lost: a failing or erroring test still fails every run |
+| U35 | Reduce implementer stops and test time (user, 2026-10-16, approving the analysis of SAG-122 to SAG-125): (1) a validation command may be `final_only: true` with the `criteria` only it proves; milestone runs skip it and those criteria (and any `command:<id>` reference to it) are due only in final and remediation runs; (2) milestone runs stop at the first failing command, recording the rest as not run, and the planner orders commands fastest first; (3) Claude workers run with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, `BASH_DEFAULT_TIMEOUT_MS` = the validation-command timeout, and `BASH_MAX_TIMEOUT_MS` = the job timeout, and the implementer runs the runner in the foreground; (4) `estimate_loc` counts added or changed lines, and a check covering both a size overrun and a plan change answers the size classification with plan concerns in the rationale; (5) `/implement` merges the base branch into the epic branch before each implementer job; (6) a criterion that depends on a measured result carries an **If missed** line approved at Gate 1, which the implementer applies; (7) the criteria file refers to documents by repository path, not relative links | Of 57 implementer jobs, 28 ended before `done`: owner decisions mid-implementation (about 9), size checks (5), criterion mapping (about 5, U34), environment blockers (6), late merges of `main` (5), and test runs started in the background that died with the `--print` session (4; a session waits at most 10 minutes for background work, the runs took 14 to 40). 33-71% of test runs failed and each retry reran every command; SAG-122's live commands added about 43 minutes per run. Verified 2026-10-16 with `claude --print --safe-mode`: the timeout variable applies, and the disable variable removes `run_in_background` (without it the model used it). Codex workers are not covered: not measured |
+| U36 | When breaking a PRD into epics or splitting an epic that grew too large, the planner tries, at low to medium effort, to draw boundaries that let some epics be implemented in parallel: cut along modules, data ownership, or integrations; give shared groundwork to one small epic first or agree the contract up front; never add mocks or abstractions, or split value the user needs together, only for parallelism. Two epics are parallel tracks only when no dependency joins them and they share little of what they touch; each epic's `details.md` records Depends on, Can run alongside, and Touches (user, 2026-10-16: "not all of them, not at any cost, only when it makes sense") | Sagara's last four epics each shared 10 to 24 production or configuration files and 8 to 13 architecture docs with every other one, although none was a functional dependency of the next; `/prd_breakdown` judged parallel tracks by dependencies alone |
 
 ## Codex review #1 (design) dispositions
 

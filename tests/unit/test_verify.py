@@ -118,6 +118,49 @@ def test_milestone_runs_require_only_done_criteria(planned, fake):
     )
 
 
+def test_a_criterion_is_due_only_once_every_story_listing_it_is_done(planned, fake):
+    build(planned)
+    set_plan(planned, "criteria: [AC-001], status: todo", "criteria: [AC-001, AC-002], status: done")
+    git(planned, "add", "-A")
+    git(planned, "commit", "-q", "-m", "plan: S1 done, S2 still open")
+    record = run(planned, milestone="M1")
+    assert record["acceptance"] == {"AC-001": "passed", "AC-002": "pending (missing)"}
+    set_plan(planned, "criteria: [AC-002], status: todo", "criteria: [AC-002], status: done")
+    git(planned, "add", "-A")
+    git(planned, "commit", "-q", "-m", "plan: S2 done")
+    record = run(planned, milestone="M2", expect=1)
+    assert "AC-002: mapped tests missing" in " | ".join(record["problems"])
+
+
+def all_stories_done(root: Path) -> None:
+    set_plan(root, "status: todo", "status: done")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "plan: all stories done")
+
+
+def test_final_only_commands_and_their_criteria_wait_for_the_final_run(planned, fake):
+    build(planned, TEST + "\n\ndef test_rejects_empty_name():\n    import pytest\n\n    with pytest.raises(ValueError):\n        greet(\"\")\n")
+    set_plan(planned, "  - id: lint\n    type: check\n", "  - id: lint\n    type: check\n    final_only: true\n")
+    all_stories_done(planned)
+    record = run(planned, milestone="M2")
+    assert record["commands"][1] == {"id": "lint", "command": record["commands"][1]["command"], "not_run": "final only"}
+    assert record["acceptance"] == {"AC-001": "passed", "AC-002": "pending (missing)"}
+    final = run(planned)
+    assert final["acceptance"] == {"AC-001": "passed", "AC-002": "passed_by_exit_code"}
+    assert "not_run" not in final["commands"][1]
+
+
+def test_a_milestone_run_stops_at_the_first_failing_command(planned, fake):
+    build(planned, TEST + "\n\ndef test_bad():\n    assert False\n")
+    all_stories_done(planned)
+    record = run(planned, milestone="M2", expect=1)
+    assert record["commands"][1]["not_run"] == "an earlier command failed"
+    assert record["acceptance"]["AC-002"] == "not run"
+    assert not any(problem.startswith("AC-") for problem in record["problems"])
+    final = run(planned, expect=1)
+    assert "not_run" not in final["commands"][1] and "AC-002: mapped tests missing" in final["problems"]
+
+
 def test_missing_junit_gaps_and_dirty_trees(planned, fake):
     build(planned)
     set_plan(planned, "--junitxml={junit}", "--junitxml={junit}; rm -f {junit}")

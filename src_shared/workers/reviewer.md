@@ -104,7 +104,9 @@ DECISION: approved | concerns | implementation_growth | scope_growth
 
 For a size overrun, answer `implementation_growth` when the extra code serves
 the approved criteria, or `scope_growth` when it adds behavior or capability
-beyond them. For a plan change, answer `approved` or `concerns`.
+beyond them. For a plan change, answer `approved` or `concerns`. When one
+check covers both, answer the size classification and put any concerns about
+the plan change in the rationale.
 
 ## Mission: diagnose
 

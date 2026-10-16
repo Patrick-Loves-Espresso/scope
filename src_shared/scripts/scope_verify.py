@@ -180,21 +180,38 @@ def cmd_run(args: argparse.Namespace) -> None:
     if len(ids) != len(set(ids)):
         raise ScopeError(f"validation ids must be unique: {ids}")
     tested, out = git(root, "rev-parse", "HEAD"), run_dir(root, args.epic, f"verify-{args.milestone}")
-    rows, cases, problems = [], [], []
+    milestone = args.milestone not in ALL_CRITERIA
+    rows: list[dict[str, Any]] = []
+    cases: list[dict[str, Any]] = []
+    problems: list[str] = []
     for entry in plan["validation"]:
+        if milestone and (entry.get("final_only") or problems):  # final-only commands wait; a failure stops the run
+            rows.append({"id": entry["id"], "command": entry["command"],
+                         "not_run": "final only" if entry.get("final_only") else "an earlier command failed"})
+            continue
         row, found, issues = _run_command(root, entry, out, policy["timeouts_seconds"]["validation_command"])
         rows.append(row)
         cases += found
         problems += issues
-    done = {ac for story in plan.get("stories") or [] if story.get("status") == "done"
-            for ac in story.get("criteria") or []}
-    required = set(criteria_ids(epic)) if args.milestone in ALL_CRITERIA else done
-    exit_codes = {row["id"]: row["exit_code"] for row in rows}
+    stopped = any(row.get("not_run") == "an earlier command failed" for row in rows)
+    tests = plan.get("acceptance_tests") or {}
+    final_only = {entry["id"] for entry in plan["validation"] if entry.get("final_only")}
+    later = {ac for entry in plan["validation"] if entry.get("final_only") for ac in entry.get("criteria") or []}
+    later |= {ac for ac, refs in tests.items() if any(ref.split(":", 1)[1] in final_only
+                                                       for ref in refs or [] if ref.startswith("command:"))}
+    # A criterion is due at a milestone once every story listing it is done, unless a final-only command proves it.
+    stories = plan.get("stories") or []
+    unfinished = {ac for story in stories if story.get("status") != "done" for ac in story.get("criteria") or []}
+    done = {ac for story in stories for ac in story.get("criteria") or []} - unfinished - later
+    required = set(criteria_ids(epic)) if not milestone else done
+    exit_codes = {row["id"]: row["exit_code"] for row in rows if "exit_code" in row}
     acceptance = {}
     for criterion in criteria_ids(epic):
-        status = criterion_status(plan.get("acceptance_tests", {}).get(criterion) or [], cases, exit_codes)
+        status = criterion_status(tests.get(criterion) or [], cases, exit_codes)
+        if criterion in required and stopped and status == "missing":
+            status = "not run"
         acceptance[criterion] = status if criterion in required else f"pending ({status})"
-        if criterion in required and status not in ("passed", "passed_by_exit_code"):
+        if criterion in required and status not in ("passed", "passed_by_exit_code", "not run"):
             problems.append(f"{criterion}: mapped tests {status}")
     size = size_report(root, epic, policy)
     record = {

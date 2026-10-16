@@ -29,10 +29,14 @@ For each story, in plan order:
    why), commit, and stop with `STATUS: needs_check`.
 4. At the end of a milestone, run the milestone verification command from the
    assignment. It runs the plan's validation commands and commits
-   `verification.yaml`. Fix any failure, commit, and run it again.
+   `verification.yaml`. Fix any failure, commit, and run it again. Run it, and
+   any long test command, in the foreground with a timeout long enough for it
+   to finish: a background command dies when your job ends.
 
 Decide reversible implementation choices yourself and note each in one
-decision-log line. When you need to depart from the reviewed plan in one of
+decision-log line. When a measurement misses a criterion, apply the
+criterion's **If missed** line and record the result; stop for the user only
+when that line says so or the criterion has none. When you need to depart from the reviewed plan in one of
 these ways, record the change in the decision log, commit, and stop with
 `STATUS: needs_check` before doing it:
 

@@ -301,11 +301,30 @@ Use capability map, **architecture decisions from Phase 2**, and [Epic Identific
    - Estimated scope (2-8 weeks guideline)
    - **Release phase (MVP / Phase 2 / Phase 3 / Future)** - based on Product Decisions
 
+### Decoupling for Parallel Work (when it costs little)
+
+Some epics should be implementable at the same time, each in its own worktree.
+Where it takes low to medium effort, draw the boundaries for that:
+
+- Cut along modules, data ownership, or external integrations, so two epics
+  rarely change the same files, configuration, or architecture chapters.
+- Give shared groundwork (a schema, a configuration section, an interface)
+  to one small epic that comes first, or agree the contract up front, instead
+  of letting two epics reshape it.
+- Note what each epic touches: modules, data, configuration files, and
+  architecture docs.
+
+Do not force it. Keep capabilities together, or in sequence, when they share
+code heavily, when one needs the other's result, or when separating them would
+split value the user needs together. Never add mocks, adapters, or
+abstractions only to make epics parallel. A solo owner rarely gains from more
+than two epics in flight.
+
 ### Quality Checks
 
 For each proposed epic:
 - ✅ Delivers standalone value?
-- ✅ Semi-independent development possible?
+- ✅ Semi-independent development possible? What it touches is noted?
 - ✅ Clear acceptance criteria can be written?
 - ✅ Not too broad (>8 weeks) or too granular (<2 weeks)?
 
@@ -383,7 +402,8 @@ Which would you like to do?
 - Re-present for approval
 
 **"Split [Epic X]"**:
-- Ask splitting criteria
+- Ask splitting criteria; where it costs little, prefer split lines that let
+  the parts run in parallel (see Decoupling for Parallel Work)
 - Create 2+ epics from original
 - Validate new epic sizes
 - Re-present
@@ -453,6 +473,14 @@ dependency:
   resolution: [sequential|contract-first|parallel-with-mocks]
   risk: [high|medium|low]
 ```
+
+### Parallel Tracks
+
+Two epics are parallel tracks only when no dependency path joins them **and**
+they share little of what they touch. A shared file is fine when the edits are
+small and separate (different keys of a configuration file); it is not when
+both epics reshape the same module, schema, or architecture chapter. Record,
+per epic, the epics it can run alongside (often none).
 
 ### Dependency Visualization
 
@@ -614,6 +642,10 @@ For each approved epic (in dependency order):
 
        **Blocks:**
        - [Epic ID]: [Epic Title] - [What this epic unblocks]
+
+       **Can run alongside:** [Epic IDs from Parallel Tracks, or None]
+
+       **Touches:** [modules, data, configuration files, architecture docs]
 
        ## Release Phase
        ⭐ MVP / 📦 Phase 2 / 🔮 Future
@@ -849,7 +881,8 @@ Before completing, verify:
 ### Dependency Quality
 - [ ] Foundation dependencies identified and documented
 - [ ] No circular dependencies exist
-- [ ] Parallel development opportunities identified
+- [ ] Parallel development opportunities identified, judged by what the epics
+      touch as well as by their dependencies, and only where cheap
 - [ ] Interface contracts flagged for early definition
 
 ### Documentation Quality

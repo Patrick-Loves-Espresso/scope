@@ -242,6 +242,8 @@ def main() -> None:
                     "first_line": prompt.splitlines()[0],
                     "data_home": os.environ.get("XDG_DATA_HOME"),
                     "auth": Path(os.environ.get("XDG_DATA_HOME", "/nonexistent"), "opencode", "auth.json").is_file(),
+                    "foreground": [os.environ.get(key) for key in (
+                        "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "BASH_DEFAULT_TIMEOUT_MS", "BASH_MAX_TIMEOUT_MS")],
                 }
             )
             + "\n"
