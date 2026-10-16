@@ -34,6 +34,10 @@ below, then stop.
 - Other documents referred to by repository path in backticks, not relative
   links: archiving the epic moves the file, and an edited link needs a new
   approval.
+- When the epic is too large for one pass and its criteria fall into groups
+  that could ship separately, propose a split as an open product question.
+  Where it costs little, prefer parts that touch different code, so they can
+  be implemented in parallel; do not force it.
 - A baseline: run the project's existing test, lint, and type commands (the
   ones this epic's validation will use; see `AGENTS.md` or `CLAUDE.md`, CI, or
   the Makefile) on the current code, never anything that deploys, migrates, or

@@ -40,7 +40,9 @@ status: draft
 
 ## Dependencies
 
--
+- Depends on: [epics that must be merged first, or None]
+- Can run alongside: [epics that can be implemented at the same time, or None]
+- Touches: [modules, data, configuration files, and architecture docs it changes]
 
 ## Risks
 
