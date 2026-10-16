@@ -186,8 +186,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         rows.append(row)
         cases += found
         problems += issues
-    done = {ac for story in plan.get("stories") or [] if story.get("status") == "done"
-            for ac in story.get("criteria") or []}
+    # A criterion is due at a milestone once every story listing it is done.
+    stories = plan.get("stories") or []
+    unfinished = {ac for story in stories if story.get("status") != "done" for ac in story.get("criteria") or []}
+    done = {ac for story in stories for ac in story.get("criteria") or []} - unfinished
     required = set(criteria_ids(epic)) if args.milestone in ALL_CRITERIA else done
     exit_codes = {row["id"]: row["exit_code"] for row in rows}
     acceptance = {}

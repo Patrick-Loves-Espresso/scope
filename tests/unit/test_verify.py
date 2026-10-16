@@ -118,6 +118,20 @@ def test_milestone_runs_require_only_done_criteria(planned, fake):
     )
 
 
+def test_a_criterion_is_due_only_once_every_story_listing_it_is_done(planned, fake):
+    build(planned)
+    set_plan(planned, "criteria: [AC-001], status: todo", "criteria: [AC-001, AC-002], status: done")
+    git(planned, "add", "-A")
+    git(planned, "commit", "-q", "-m", "plan: S1 done, S2 still open")
+    record = run(planned, milestone="M1")
+    assert record["acceptance"] == {"AC-001": "passed", "AC-002": "pending (missing)"}
+    set_plan(planned, "criteria: [AC-002], status: todo", "criteria: [AC-002], status: done")
+    git(planned, "add", "-A")
+    git(planned, "commit", "-q", "-m", "plan: S2 done")
+    record = run(planned, milestone="M2", expect=1)
+    assert "AC-002: mapped tests missing" in " | ".join(record["problems"])
+
+
 def test_missing_junit_gaps_and_dirty_trees(planned, fake):
     build(planned)
     set_plan(planned, "--junitxml={junit}", "--junitxml={junit}; rm -f {junit}")

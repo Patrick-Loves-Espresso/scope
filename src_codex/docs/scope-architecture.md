@@ -330,9 +330,9 @@ validation command of the plan with a POSIX `sh -c` in its own process group
 a non-zero exit, a missing JUnit file, a failure or error in the XML, or a skip
 without a reason. Each criterion's mapped tests must have run and passed;
 `command:<id>` maps a criterion to an exit-code-only command and is recorded as
-such. Milestone runs require the criteria of finished stories; `final` and
-`remediation` runs require all. Coverage of new and changed code is checked by
-a standard tool declared as a `check` command.
+such. Milestone runs require a criterion once every story listing it is
+finished; `final` and `remediation` runs require all. Coverage of new and
+changed code is checked by a standard tool declared as a `check` command.
 
 `scope_verify.py size` counts production code lines added since the epic
 branch forked (comments, docstrings, and blank lines excluded, by pygments)

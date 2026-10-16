@@ -141,8 +141,9 @@ keep the original wording where it still holds.
 - A criterion passes when every reference matches at least one test case
   (boundary-aware suffix match on normalized `classname.name`) and all matches
   passed; `command:<id>` references pass by exit code and are recorded as
-  `passed_by_exit_code`. Milestone runs require criteria of `done` stories
-  (others `pending`); `final` and `remediation` require all.
+  `passed_by_exit_code`. Milestone runs require a criterion once every story
+  listing it is `done` (others `pending`); `final` and `remediation` require
+  all.
 - Coverage of a later commit: the latest run is `final`/`remediation`,
   passed, and only `verification.yaml`/`review.md` under `docs/epics/`
   changed since its tested commit.
@@ -246,6 +247,9 @@ keep the original wording where it still holds.
 - [x] 2026-10-13 Lint and type checks (U33) on branch `chore/lint-type-gate`:
   ruff and mypy in Scope's own PR gate (four mypy errors fixed), and
   `scope_check.py plan` requires `lint` and `types` checks in every plan
+- [x] 2026-10-16 Milestone criteria (U34) on branch
+  `fix/criterion-due-when-all-stories-done`: a criterion is required at a
+  milestone run only once every story listing it is done
 
 ## Configurable reviewers (U14–U25, implemented 2026-10-02)
 
@@ -441,6 +445,7 @@ duplicating a reviewer); `git diff --check`;
 | L22 | Working papers are suggested as `notes/<story>.md` in the epic folder; nothing enforces the name | A concrete example helps agents; the destination rule (§4.7) already allows it |
 | L12 | Stale references to removed artifacts are fixed where they occur (`/audit_decisions`, `details.md` template, Codex docs); `/prd_breakdown` is left unchanged per plan | Removal consequence, not new design |
 | U33 | Scope's PR gate runs ruff (scripts and tests) and mypy (scripts); `scope_check.py plan` refuses a plan whose validation lacks a `lint` or a `types` check, unless the plan lists the missing one in `unavailable_evidence` with a reason; the required ids are `required_checks` in the policy (user, 2026-10-12; numbered after U29–U32 on `feat/director-cohabitation`) | Scope's own code had no lint or type gate; the planner was told to declare lint and type checks, but nothing enforced it, and SAG-113 already used the ids `lint` and `types` |
+| U34 | A milestone run requires a criterion only once every story listing it is `done`, no longer as soon as one of them is; `final` and `remediation` runs still require every criterion (user, 2026-10-16, who left the choice of fix to the implementer) | Planners list a criterion on every story that contributes to it, so the first finished story made the criterion due while its last tests were still to be written, and implementation stalled on "mapped tests missing" (seen in a Sagara epic; SAG-131's plan has 10 such criteria). Flagging this in `scope_check.py plan` instead was rejected: the plan does not record which story writes which test. Nothing is lost: a failing or erroring test still fails every run |
 
 ## Codex review #1 (design) dispositions
 

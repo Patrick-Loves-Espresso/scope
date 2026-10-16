@@ -64,8 +64,8 @@ and changed code with a standard tool, for example
 Map each criterion to the tests that prove it (`path::test` or the JUnit
 `classname.name`). A criterion proved only by a command without JUnit output
 names that command as `command:<id>`; the record marks it as proved by exit
-code. Milestone runs require the criteria of stories marked done; the final
-run requires every criterion.
+code. Milestone runs require a criterion once every story listing it is
+marked done; the final run requires every criterion.
 
 ```yaml scope
 validation:
