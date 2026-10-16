@@ -27,6 +27,13 @@ below, then stop.
   approves.
 - A "Not building" list: things a reader might expect that are deliberately
   excluded.
+- For a criterion that depends on a measured result (a benchmark bar, a
+  threshold, a paid run's cost), an **If missed** line the user approves with
+  it: what happens when the measurement misses (adjust within a stated range,
+  record it and continue, or stop for the user).
+- Other documents referred to by repository path in backticks, not relative
+  links: archiving the epic moves the file, and an edited link needs a new
+  approval.
 - A baseline: run the project's existing test, lint, and type commands (the
   ones this epic's validation will use; see `AGENTS.md` or `CLAUDE.md`, CI, or
   the Makefile) on the current code, never anything that deploys, migrates, or
@@ -44,13 +51,16 @@ below, then stop.
 - Follow the plan template (ExecPlan style). Reference the durable docs; record
   only what this epic adds or changes.
 - Milestones that each end in something observable. Stories as a checklist:
-  complexity 0–7 (split anything above), an estimate in production code lines,
-  and the criteria each story delivers. The story estimates sum to the plan
+  complexity 0–7 (split anything above), an estimate in production code lines
+  added or changed (the size check counts every added or modified line), and
+  the criteria each story delivers. The story estimates sum to the plan
   estimate.
 - Validation commands that write JUnit XML with standard tooling, lint and type
   checks with the ids `lint` and `types` (a project without such a tool lists
   the id in `unavailable_evidence` with the reason), and a coverage check of
-  new and changed code. Handle the baseline's
+  new and changed code. Order them fastest first: a milestone run stops at the
+  first failing command. Mark slow live or benchmark commands `final_only:
+  true`, with the `criteria` only they prove; milestone runs skip them. Handle the baseline's
   failures as the user decided at Gate 1. Map every criterion to the tests that
   prove it.
 - `production_paths` and `test_paths`, plus `expected_paths` for anything else

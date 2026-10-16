@@ -94,6 +94,8 @@ def test_changed_criteria_need_renewed_approval_with_diff_and_delta(project):
         ("  - id: lint\n    type: check", "  - id: style\n    type: check", "declare a `lint` check"),
         ("unavailable_evidence: [{id: types", "unavailable_evidence: [{id: typing", "declare a `types` check"),
         (', reason: "the sample has no type checker"}', "}", "declare a `types` check"),
+        ("  - id: lint\n    type: check\n", "  - id: lint\n    type: check\n    criteria: [AC-009]\n",
+         "validation lint: unknown criterion AC-009"),
         ("docs:\n  - {target", "documents:\n  - {target", "docs: declare"),
         ("story: S1, change", "story: S7, change", "needs a target and an owner story"),
     ],

@@ -55,6 +55,17 @@ arguments here, in the worktree, as `/audit_epic` Setup describes.
 
 ## 1. Implement
 
+Before each implementer job, bring the epic branch up to date when the base
+branch has moved (workers cannot start a merge):
+
+```bash
+BASE="$(git -C "$ROOT" branch --show-current)"
+[ "$(git rev-list --count "HEAD..$BASE")" = 0 ] || git merge --no-edit "$BASE"
+```
+
+On a conflict, leave the merge in progress and launch an implementer whose
+task is to resolve it, run the affected tests, and `git commit --no-edit`.
+
 ```bash
 $PY "$S/scope_launch.py" work --host $HOST --role implementer --epic $EPIC \
   --task "Implement plan.md, continuing from its story status and the git log."
@@ -79,8 +90,9 @@ context, external integrations, or uncertainty warrant it. Act on its status:
 
   If the check reviewer fails, ask the user as in `/audit_epic` step 1 before
   any replacement. `implementation_growth` or `approved`: launch a fresh
-  implementer whose task says so. `concerns`: launch a fresh implementer whose
-  task carries the concerns, then check again. `scope_growth`: ask the user to
+  implementer whose task says so, with any concerns from the rationale.
+  `concerns`: launch a fresh implementer whose task carries the concerns, then
+  check again. `scope_growth`: ask the user to
   re-approve, cut, or re-plan (see "Renewing Gate 1 on the branch").
 - `needs_user`: ask the user every question at once; continue with a fresh
   implementer whose task carries the answers. An answer that changes the

@@ -35,8 +35,9 @@ criterion touches security, money, data integrity, or destructive actions.]
 ## Stories
 
 Complexity is 0–10 (maximum 7; split anything above, or record
-`complexity_exception`). `estimate_loc` is production code lines. The
-implementer sets `status: done` when the story is committed.
+`complexity_exception`). `estimate_loc` is the production code lines the
+story adds or changes; the size check counts every added or modified line.
+The implementer sets `status: done` when the story is committed.
 
 ```yaml scope
 stories:
@@ -55,6 +56,10 @@ Scope's runner runs these with `sh -c` from the repository root, on a
 committed state. A test suite writes JUnit XML with its standard reporter to
 the `{junit}` path (pytest `--junitxml`, `gotestsum --junitfile`, a Jest JUnit
 reporter); a failing or skipped test without a reason fails the run.
+Order the commands fastest first: a milestone run stops at the first failing
+command, while final and remediation runs run them all. A slow live or
+benchmark command can be `final_only: true`: milestone runs skip it, and the
+`criteria` it alone proves are due only in the final run.
 `type: check` commands (lint, types, coverage) count by exit code. Every
 plan declares a `lint` and a `types` check; a project without such a tool
 lists the id in `unavailable_evidence` with the reason. Check coverage of new
@@ -78,6 +83,11 @@ validation:
   - id: types
     type: check
     command: "mypy src"
+  - id: live
+    type: test
+    command: "python -m pytest tests/e2e --junitxml={junit}"
+    final_only: true       # milestone runs skip it
+    criteria: [AC-002]     # due only in the final run
 acceptance_tests:          # tests that prove each criterion; all must run and pass
   AC-001: ["tests/unit/test_example.py::test_example"]
 unavailable_evidence: []   # evidence that cannot run here: {id, reason}

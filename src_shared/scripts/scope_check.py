@@ -102,6 +102,8 @@ def check_plan(root: Path, epic: Path, policy: dict[str, Any]) -> dict[str, Any]
     declared |= {entry.get("id") for entry in data.get("unavailable_evidence") or [] if entry.get("reason")}
     errors += [f"validation: declare a `{key}` check, or list it in unavailable_evidence with a reason"
                for key in policy["required_checks"] if key not in declared]
+    errors += [f"validation {entry.get('id')}: unknown criterion {ac}" for entry in commands
+               for ac in entry.get("criteria") or [] if ac not in ids]
     tests = data.get("acceptance_tests") or {}
     errors += [f"{ac}: no tests mapped in acceptance_tests" for ac in ids if not tests.get(ac)]
     errors += [f"{ac}: unknown validation command in {ref}" for ac, refs in tests.items() for ref in refs or []

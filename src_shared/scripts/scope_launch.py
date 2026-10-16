@@ -93,9 +93,13 @@ def cmd_work(args: argparse.Namespace) -> None:
         args.host, model=selected["model"], effort=selected["effort"], root=root, write=True,
         output_path=out / "message.md", prompt=prompt, add_dirs=add_dirs,
     )
+    # Claude workers keep long test runs in the foreground: a --print session ends without waiting for them.
+    foreground = {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+                  "BASH_DEFAULT_TIMEOUT_MS": str(timeouts["validation_command"] * 1000),
+                  "BASH_MAX_TIMEOUT_MS": str(timeouts[args.role] * 1000)} if args.host == "claude" else None
     start = git(root, "rev-parse", "HEAD")
     result = providers.run(argv, provider=args.host, prompt=prompt, cwd=root, stdout_path=out / "stdout.log",
-                           stderr_path=out / "stderr.log", timeout=timeouts[args.role])
+                           stderr_path=out / "stderr.log", timeout=timeouts[args.role], env=foreground)
     message, usage = providers.final_message(args.host, out / "stdout.log", out / "message.md")
     (out / "message.md").write_text(message, encoding="utf-8")
     statuses = STATUS.findall(message)
