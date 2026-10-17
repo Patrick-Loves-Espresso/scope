@@ -18,7 +18,10 @@ writing.
 For each story, in plan order:
 
 1. Write the code and its tests together. Run the tests and debug your own
-   failures; do not stop at the first red test.
+   failures; do not stop at the first red test. Within a story, run the tests
+   the change affects (`codegraph affected` lists them when an index exists);
+   the runner runs the full suite at milestones. Send long test output to a
+   file under `tmp_debug/` and read its summary and failures.
 2. When the story's tests pass, set its `status: done` in `plan.md`, add a
    one-line progress-log entry, and commit everything for that story with a
    meaningful label, for example `feat(<epic-id>): S2 persist user preferences`.

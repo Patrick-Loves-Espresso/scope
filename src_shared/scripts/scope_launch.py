@@ -56,7 +56,7 @@ def _instructions(host: str) -> str:
     return "follow the AGENTS.md instructions Codex supplies."
 
 
-def worker_prompt(role: str, host: str, root: Path, epic: Path, epic_id: str, task: str) -> str:
+def worker_prompt(role: str, host: str, root: Path, epic: Path, epic_id: str, task: str, hours: float) -> str:
     runner = f"{shlex.quote(sys.executable)} {shlex.quote(str(SCOPE_ROOT / 'scripts' / 'scope_verify.py'))}"
     lines = [
         _read(SCOPE_ROOT / "workers" / f"{role}.md"), "", "## Assignment", "",
@@ -65,6 +65,8 @@ def worker_prompt(role: str, host: str, root: Path, epic: Path, epic_id: str, ta
         f"- Templates: `{TEMPLATES}`",
         f"- Repository instructions: {_instructions(host)}",
         f"- CodeGraph: {CODEGRAPH}",
+        f"- Time: this job is stopped after {hours:g} hours. Pace the work to commit and report before then; never "
+        "cut a story, a test, or an edge case short to fit: stop at a clean point and report progress instead.",
     ]
     if role == "implementer":
         lines += [
@@ -84,7 +86,7 @@ def cmd_work(args: argparse.Namespace) -> None:
     if problem:
         raise ScopeError(problem)
     out = run_dir(root, args.epic, args.role)
-    prompt = worker_prompt(args.role, args.host, root, epic, args.epic, args.task)
+    prompt = worker_prompt(args.role, args.host, root, epic, args.epic, args.task, timeouts[args.role] / 3600)
     (out / "prompt.md").write_text(prompt, encoding="utf-8")
     add_dirs = []
     if args.host == "codex" and args.role == "implementer":

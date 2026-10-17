@@ -302,6 +302,12 @@ them on a committed state, reads standard JUnit XML (pytest `--junitxml`,
 gotestsum, a Jest reporter), checks that the tests mapped to each criterion
 ran and passed, and records the result in `verification.yaml`.
 
+**Lean project instructions.** Every worker reads the project's `AGENTS.md`
+at the start of every job. Keep it under about 200 lines:
+commands an agent cannot guess, project gotchas, and pointers to the docs.
+Anthropic's guidance is that bloated instruction files make Claude ignore the
+instructions that matter.
+
 **Durable documentation.** Each epic declares its doc obligations. Before the
 audit, the implementer finalizes ADRs, arc42 sections, and specs, and archives
 the epic folder on the branch, so the audit checks the docs against the code
