@@ -52,7 +52,7 @@ def _read(path: Path) -> str:
 def _instructions(host: str) -> str:
     if host == "claude":
         return ("Claude safe mode does not load project instructions: read CLAUDE.md once if it exists, "
-                "otherwise AGENTS.md.")
+                "with every file it imports through an `@path` line, otherwise AGENTS.md.")
     return "follow the AGENTS.md instructions Codex supplies."
 
 
