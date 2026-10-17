@@ -208,6 +208,12 @@ def test_claude_workers_keep_long_commands_in_the_foreground(planned, fake):
     assert calls(fake)[-1]["foreground"] == ["1", "3600000", "14400000"]
 
 
+def test_worker_prompts_give_the_time_limit_as_guidance(planned, fake):
+    work(planned, role="implementer", task="Implement plan.md.")
+    prompt = sorted((planned / "tmp_debug" / "scope-runs").rglob("*-implementer/prompt.md"))[-1].read_text()
+    assert "this job is stopped after 4 hours" in prompt and "never cut a story, a test, or an edge case" in prompt
+
+
 def test_implementer_leaving_changes_uncommitted_is_warned(planned, fake, monkeypatch):
     monkeypatch.setenv("FAKE_MESSAGE", "Done.\nSTATUS: done")
     (planned / "src").mkdir()

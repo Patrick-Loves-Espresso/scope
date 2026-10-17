@@ -2,10 +2,11 @@
 
 # Workers run on the provider that hosts the command (Claude Code or Codex). Claude models are
 # Claude Code aliases that follow the latest model of the family; Codex has no such alias (U27).
+# Claude workers run at high: Anthropic advises reserving xhigh for work with a measured gain (U37).
 workers:
   claude:
-    planner: {model: opus, effort: xhigh}
-    implementer: {model: opus, effort: xhigh}
+    planner: {model: opus, effort: high}
+    implementer: {model: opus, effort: high}
   codex:
     planner: {model: gpt-6.1-sol, effort: xhigh}
     implementer: {model: gpt-6.1-sol, effort: xhigh}

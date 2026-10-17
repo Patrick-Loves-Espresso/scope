@@ -84,7 +84,7 @@ decide. Add nothing new.
 DECISION: done
 
 ## Outcomes
-- <finding id>: rejection_upheld | finding_upheld | product_scope — <reasoning and evidence>
+- <finding id>: rejection_upheld | finding_upheld | product_scope — <evidence>
 ```
 
 Use `product_scope` when the dispute is about what the product should do; the
