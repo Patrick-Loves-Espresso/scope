@@ -53,6 +53,9 @@ reviewers. Run `$PY "$S/scope_reviewers.py" show --epic $EPIC` now: without an
 `/scope_reviewers` (Codex: `scope:reviewers`). Apply reviewer requests in the
 arguments here, in the worktree, as `/audit_epic` Setup describes.
 
+**Oversight.** If a `$ROOT/docs/oversight/*.md` file lists this epic, follow
+`$SCOPE_ROOT/commands/overseer/epic-session.md` too.
+
 ## 1. Implement
 
 Before each implementer job, bring the epic branch up to date when the base

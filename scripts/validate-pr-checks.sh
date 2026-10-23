@@ -208,9 +208,11 @@ check_install() {
     for path in \
       commands/epic_refine.md commands/implement.md commands/audit_epic.md commands/wrap_epic.md \
       commands/epic_refine/reviewer-refinement.md commands/audit_epic/reviewer-audit.md \
+      commands/overseer.md commands/overseer/drift-audit.md commands/overseer/oversight.md \
       workers/planner.md workers/implementer.md workers/reviewer.md \
       governance/simplicity-and-size.md governance/developer-checklist.md config/scope-policy.yaml \
-      scripts/scope_common.py scripts/scope_providers.py scripts/scope_reviewers.py agents/developer.md \
+      scripts/scope_common.py scripts/scope_providers.py scripts/scope_reviewers.py scripts/scope_oversee.py \
+      agents/developer.md \
       agents/architect.md \
       agents/product-owner.md skills/project-documentation/SKILL.md \
       skills/project-documentation/templates-technical-arc42-c4/epic/details.md \
@@ -222,7 +224,7 @@ check_install() {
       requirements.txt; do
       test -f "$tmpdir/$root/$path" || fail "install is missing $root/$path"
     done
-    for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py; do
+    for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py scope_oversee.py; do
       test -x "$tmpdir/$root/scripts/$executable" || fail "$root/scripts/$executable is not executable"
     done
     for path in \

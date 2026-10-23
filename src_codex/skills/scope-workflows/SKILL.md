@@ -5,7 +5,7 @@ description: Run Scope-style product engineering workflows in Codex using comman
 
 # Scope Workflows for Codex
 
-Use this skill when the user asks for Scope-like workflows in Codex, invokes `scope:<command>`, or asks to run a Scope command such as `prd_refine`, `epic_refine`, `implement`, `audit_epic`, `wrap_epic`, `re_documentation`, or `sync_product`.
+Use this skill when the user asks for Scope-like workflows in Codex, invokes `scope:<command>`, or asks to run a Scope command such as `prd_refine`, `epic_refine`, `implement`, `audit_epic`, `wrap_epic`, `overseer`, `re_documentation`, or `sync_product`.
 
 ## Artifact Locations
 
@@ -56,6 +56,9 @@ and the read-only reviewers and adjudicator the user chose with
 reviewer's job in the orchestrating session,
 and never substitute Codex sub-agents for them. Scope's runner, not a model,
 executes the validation commands and writes `verification.yaml`.
+`scope:overseer` oversees several epics refined in other sessions; its
+drift audits run through `scripts/scope_oversee.py`, which launches the
+project's audit reviewers read-only, so they too are never sub-agents.
 
 The standalone architect, developer, product-owner, and reverse-engineering
 agents serve workflows outside these lifecycle commands.

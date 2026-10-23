@@ -9,14 +9,14 @@ args: "{epic-id}"
 You orchestrate. A fresh planner writes the criteria and the plan; reviewers
 review the plan and an adjudicator settles disputes. Never write the criteria,
 plan, findings, or `approvals.yaml` yourself, and never review the plan
-yourself. You talk to the user; workers and reviewers do not.
-
-Invoking this command authorizes sending the epic's documents and the
-repository to the configured reviewer providers.
+yourself. You talk to the user; workers and reviewers do not. Invoking this
+command authorizes sending the epic's documents and the repository to the
+configured reviewer providers.
 
 ## Setup
 
-Run in the main checkout, not a worktree.
+Run in the main checkout, not a worktree. If a `docs/oversight/*.md` file
+lists this epic, follow `$SCOPE_ROOT/commands/overseer/epic-session.md` too.
 
 ```bash
 EPIC="{epic-id}"

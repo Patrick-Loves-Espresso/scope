@@ -32,6 +32,7 @@ for genuine product decisions.
 - **`/audit_epic`** — Your reviewers audit the branch independently, including docs against code; findings are fixed and verified, or rejected and adjudicated
 - **`/wrap_epic`** — Show the exact commit for your approval and merge exactly that commit, with the approval recorded in the merge commit
 - **`/sync_product`** — Update product documentation when implementation reveals scope changes
+- **`/overseer`** / **`scope:overseer`** — Oversee a program of epics that separate sessions refine and implement in parallel: hold them to the program's decided items and interfaces, run two independent drift audits at Gate 1, at plan and before merge, verify every finding before relaying it, and prepare your decisions. Its state and handoff live in `docs/oversight/<name>.md`
 - **`/scope_reviewers`** / **`scope:reviewers`** — Choose the reviewers (Claude, Codex, or OpenCode models; mandatory or optional) and the adjudicator for refinement and audit, with a preflight of each ([details](#choosing-reviewers))
 
 ### Reverse Engineering (Code to Docs)
