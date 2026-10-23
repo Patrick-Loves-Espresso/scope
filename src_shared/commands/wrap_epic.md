@@ -35,6 +35,9 @@ evidence changed since the last audit round), and that `verification.yaml`
 covers the branch head (only `verification.yaml` or `review.md` changed since
 the tested commit). It prints the Gate 2 summary.
 
+**Oversight.** If a `$ROOT/docs/oversight/*.md` file lists this epic, follow
+`$SCOPE_ROOT/commands/overseer/epic-session.md` too.
+
 If it reports blocked, stop and report why:
 
 - criteria changed: renewed approval ("Renewing Gate 1 on the branch" in

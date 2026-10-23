@@ -170,7 +170,7 @@ copy_overlay "${CLAUDE_SRC}/agents" "${CLAUDE_DIR}/agents"
 copy_overlay "${SHARED_SRC}/workers" "${CLAUDE_DIR}/workers"
 copy_overlay "${SHARED_SRC}/governance" "${CLAUDE_DIR}/governance"
 copy_overlay "${CLAUDE_SRC}/governance" "${CLAUDE_DIR}/governance"
-for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py; do
+for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py scope_oversee.py; do
     [[ ! -f "${CLAUDE_DIR}/scripts/${executable}" ]] || chmod +x "${CLAUDE_DIR}/scripts/${executable}"
 done
 
@@ -228,7 +228,7 @@ copy_file_if_exists "${CODEX_SRC}/README.md" "${CODEX_DIR}/README.md"
 copy_file_if_exists "${CODEX_SRC}/.mcp.json" "${CODEX_DIR}/.mcp.json"
 copy_file_if_exists "${SCRIPT_DIR}/requirements.txt" "${CLAUDE_DIR}/requirements.txt"
 copy_file_if_exists "${SCRIPT_DIR}/requirements.txt" "${CODEX_DIR}/requirements.txt"
-for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py; do
+for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py scope_oversee.py; do
     [[ ! -f "${CODEX_DIR}/scripts/${executable}" ]] || chmod +x "${CODEX_DIR}/scripts/${executable}"
 done
 

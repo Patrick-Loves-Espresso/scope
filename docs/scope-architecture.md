@@ -55,6 +55,7 @@ verified.
                ├── scope_launch.py work    ──► planner / implementer (host provider)
                ├── scope_launch.py review  ──► the epic's reviewers and adjudicator (read-only)
                ├── scope_reviewers.py      ──► reviewer settings, preflight, metrics
+               ├── scope_oversee.py audit  ──► an overseer's drift audit by the audit reviewers (read-only)
                ├── scope_verify.py         ──► runs the plan's validation commands
                ├── scope_review.py         ──► finding states from review.md
                └── scope_check.py          ──► criteria, plan, Gate 1, Gate 2, merge
@@ -71,7 +72,7 @@ scope/
 ├── src_shared/
 │   ├── commands/        # Workflow commands (shared by Claude and Codex)
 │   ├── workers/         # planner.md, implementer.md, reviewer.md
-│   ├── scripts/         # scope_launch, scope_providers, scope_review, scope_verify, scope_check, scope_common
+│   ├── scripts/         # scope_launch, scope_providers, scope_review, scope_verify, scope_check, scope_oversee, scope_common
 │   ├── config/          # scope-policy.yaml (the only policy file)
 │   ├── governance/      # simplicity-and-size.md, developer-checklist.md
 │   ├── agents/          # Standalone roles
@@ -95,6 +96,7 @@ your-project/
 │   ├── architecture/            # current state only: arc42 01-13, ADRs, 13-specs
 │   ├── epics/<epic>/            # the epic's files while it is being refined and built
 │   ├── epics/_implemented/<epic>/
+│   ├── oversight/<name>.md      # an overseer's state and handoff; <name>/checks/ and <name>/notes/ beside it
 │   └── lessons-learned/
 ├── wip/<epic-id>/               # worktree on branch epic/<epic-id>
 └── tmp_debug/scope-runs/<epic>/ # git-ignored prompts, transcripts, and test logs
@@ -114,6 +116,7 @@ your-project/
 | `/audit_epic {epic}` | Audit by the epic's reviewers with fix, verify, and adjudication |
 | `/wrap_epic {epic}` | Gate 2 on the exact commit and the pinned merge |
 | `/sync_product [epic]` | Update product docs after scope-changing work |
+| `/overseer {name} [epics]` | Oversee a program of epics: drift audits at Gate 1, plan and merge, the user's decisions prepared |
 | `/scope_reviewers` (Codex: `scope:reviewers`) | Choose the reviewers and adjudicator per workflow, with a preflight |
 | `/re_documentation`, `/re_ops` | Reverse engineer docs from an existing codebase |
 | `/decision`, `/lesson`, `/audit_decisions` | Capture decisions and lessons |
@@ -202,6 +205,26 @@ explicit user request records a waiver for an incomplete audit, one per
 missing provider review, and only when at least one independent review
 completed; it is a quality risk, never a pass.
 
+### 4.5 `/overseer`
+
+When several epics are refined and implemented in parallel by separate
+sessions, one overseer session holds them to the program's decided items and
+interfaces. `docs/oversight/<name>.md` is its state and handoff: the user's
+mandate, the sources of truth, the decided items with their sources, the
+epics and their checkpoints, the interfaces and shared files, the queue, and
+the user's decisions. At Gate 1, when a plan is ready (one comparison of all
+plans refined in parallel), and before merge, the overseer fills
+`commands/overseer/drift-audit.md` and runs `scope_oversee.py audit`: the
+project's audit reviewers audit the same prompt, read-only and in parallel.
+It verifies every major finding before keeping it, writes the check under
+`docs/oversight/<name>/checks/`, puts decisions to the user, and relays
+corrections in `docs/oversight/<name>/notes/<epic>.md`. `/epic_refine`,
+`/implement` and `/wrap_epic` read an overseen epic's note through
+`commands/overseer/epic-session.md`, apply the drift rule (no change to a
+decided item, scope between epics, or an interface without the user), and
+say when a check is due. The overseer flags; the user decides. It never
+edits an epic's criteria, plan, review, or approvals.
+
 ---
 
 ## 5. Epic Artifacts
@@ -232,6 +255,7 @@ commit; a later commit stays covered only when it changes nothing but
 | `scope_verify.py` | `run`, `size`, `covers`, `lines` |
 | `scope_check.py` | `criteria`, `approve`, `plan`, `gate2`, `merge`, `waive` |
 | `scope_reviewers.py` | `show` (with `--preflight`), `set` (the project's), `epic` (one epic's request, in `review.md`), `metrics` (one epic or `--all`) |
+| `scope_oversee.py` | `audit`: the project's audit reviewers, read-only and in parallel, on an overseer's filled drift-audit prompt; reports under `tmp_debug/scope-runs/oversight-<name>/`, nothing committed |
 
 Every script prints JSON. Provider invocation keeps the flags proven in Scope
 1.x: Claude runs with `--print --safe-mode --strict-mcp-config --no-chrome

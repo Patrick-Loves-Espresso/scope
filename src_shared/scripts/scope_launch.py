@@ -49,7 +49,7 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8").rstrip()
 
 
-def _instructions(host: str) -> str:
+def repository_instructions(host: str) -> str:
     if host == "claude":
         return ("Claude safe mode does not load project instructions: read CLAUDE.md once if it exists, "
                 "with every file it imports through an `@path` line, otherwise AGENTS.md.")
@@ -63,7 +63,7 @@ def worker_prompt(role: str, host: str, root: Path, epic: Path, epic_id: str, ta
         f"- Epic: `{epic_id}`, folder `{epic.relative_to(root)}`",
         f"- Working root: `{root}`",
         f"- Templates: `{TEMPLATES}`",
-        f"- Repository instructions: {_instructions(host)}",
+        f"- Repository instructions: {repository_instructions(host)}",
         f"- CodeGraph: {CODEGRAPH}",
         f"- Time: this job is stopped after {hours:g} hours. Pace the work to commit and report before then; never "
         "cut a story, a test, or an edge case short to fit: stop at a clean point and report progress instead.",
@@ -216,30 +216,39 @@ def reviewer_prompt(args: argparse.Namespace, root: Path, epic: Path, review: re
     return "\n\n".join(parts) + "\n"
 
 
-def _run_reviewer(args, root, epic, review, policy, out, assignment, suffix: str = "") -> dict[str, Any]:
-    spec = assignment["reviewer"]
-    name, cli = spec["name"], spec["cli"]
-    row = {**spec, "decision": None, "duration_seconds": 0.0, "credit": assignment["credit"]}
+def run_read_only(spec: dict[str, Any], prompt: str, root: Path, policy: dict[str, Any], out: Path,
+                  label: str) -> dict[str, Any]:
+    """Run one read-only reviewer on `prompt` with its logs under `out`: status (unavailable, timed_out, failed or
+    completed), error, the final text, and duration_seconds. Shared by epic reviews and overseer audits."""
+    cli = spec["cli"]
     problem = providers.preflight(cli, spec["model"], policy["timeouts_seconds"]["preflight"],
                                   policy["min_cli_versions"].get(cli))
     if problem:
-        return {**row, "status": "unavailable", "error": problem}
-    prompt = reviewer_prompt(args, root, epic, review, assignment["findings"])
-    label = f"{spec['role']}-{name}{suffix}"
+        return {"status": "unavailable", "error": problem, "text": "", "duration_seconds": 0.0}
     (out / f"prompt-{label}.md").write_text(prompt, encoding="utf-8")
-    timeout = policy["timeouts_seconds"]["reviewer"]
     index = root / ".codegraph"  # a read-only Codex sandbox cannot open the CodeGraph database otherwise
     argv = providers.command(cli, model=spec["model"], effort=spec["effort"], root=root, write=False,
                              output_path=out / f"review-{label}.md", prompt=prompt,
                              read_only_commands=policy["reviewer_read_only_commands"],
                              add_dirs=[index] if cli == "codex" and index.is_dir() else [])
     result = providers.run(argv, provider=cli, prompt=prompt, cwd=root, stdout_path=out / f"{label}.stdout",
-                           stderr_path=out / f"{label}.stderr", timeout=timeout)
+                           stderr_path=out / f"{label}.stderr", timeout=policy["timeouts_seconds"]["reviewer"])
     text, _ = providers.final_message(cli, out / f"{label}.stdout", out / f"review-{label}.md")
-    row.update(duration_seconds=result["duration_seconds"], text=text)
+    row = {"status": "completed", "error": None, "text": text, "duration_seconds": result["duration_seconds"]}
     if result["timed_out"] or result["exit_code"] != 0 or not text.strip():
         stderr = (out / f"{label}.stderr").read_text(encoding="utf-8", errors="replace").strip()
-        return {**row, "status": "timed_out" if result["timed_out"] else "failed", "error": stderr[-500:]}
+        row.update(status="timed_out" if result["timed_out"] else "failed", error=stderr[-500:])
+    return row
+
+
+def _run_reviewer(args, root, epic, review, policy, out, assignment, suffix: str = "") -> dict[str, Any]:
+    spec = assignment["reviewer"]
+    row = {**spec, "decision": None, "duration_seconds": 0.0, "credit": assignment["credit"]}
+    prompt = reviewer_prompt(args, root, epic, review, assignment["findings"])
+    row.update(run_read_only(spec, prompt, root, policy, out, f"{spec['role']}-{spec['name']}{suffix}"))
+    if row["status"] != "completed":
+        return row
+    text = row["text"]
     row["decision"] = reviews.decision(text)
     try:
         if row["decision"] not in DECISIONS[args.mission]:
