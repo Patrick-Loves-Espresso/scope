@@ -53,14 +53,14 @@ def git(root: Path, *args: str) -> str:
 
 @pytest.fixture
 def fake(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Fake claude/codex/opencode on PATH and a fake OpenCode auth.json; returns the state directory."""
+    """Fake claude/codex/opencode/codegraph on PATH and a fake OpenCode auth.json; returns the state directory."""
     bin_dir, state, data = tmp_path / "bin", tmp_path / "state", tmp_path / "xdg-data"
     bin_dir.mkdir()
     state.mkdir()
     (data / "opencode").mkdir(parents=True)
     (data / "opencode" / "auth.json").write_text("{}")
     monkeypatch.setenv("XDG_DATA_HOME", str(data))
-    for name in ("claude", "codex", "opencode"):
+    for name in ("claude", "codex", "opencode", "codegraph"):
         wrapper = bin_dir / name
         wrapper.write_text(f'#!/bin/sh\nexec "{sys.executable}" "{FAKE}" {name} "$@"\n')
         wrapper.chmod(0o755)

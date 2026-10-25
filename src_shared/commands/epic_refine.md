@@ -27,9 +27,8 @@ S="$SCOPE_ROOT/scripts"; PY=python3                # interpreter with Scope's re
 ```
 
 Require exactly one `docs/epics/<epic-dir>/` whose name starts with the epic
-ID, with a `details.md`. If `codegraph` is on PATH, run `codegraph sync` when
-`.codegraph/` exists, or `codegraph init` when it is missing and
-`git check-ignore -q .codegraph/` succeeds.
+ID, with a `details.md`. If `codegraph` is on PATH and `.codegraph/` is missing,
+run `codegraph init` when `git check-ignore -q .codegraph/` succeeds.
 
 An epic planned by an older Scope version: `git rm -r` any of `design.md`,
 `delivery-manifest.yaml`, `file-plan-story-*.yaml`, `refinement-*`,

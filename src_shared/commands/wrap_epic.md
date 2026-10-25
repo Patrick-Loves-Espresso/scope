@@ -93,9 +93,6 @@ merge commit, and removes the worktree. It never modifies the approved
 branch. On a merge conflict it aborts the merge and reports it: resolve on
 the epic branch through `/implement`, then return here.
 
-After the merge, if `codegraph` is on PATH and `.codegraph/` exists in the
-main checkout, run `codegraph sync` there.
-
 ## Final response
 
 Report the approved SHA, the merge commit and its trailers, the base branch,

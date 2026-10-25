@@ -12,7 +12,7 @@ from typing import Any
 from scope_common import (
     SCOPE_ROOT, ScopeError, emit, find_epic, git, load_policy, project_settings, repo_root, run_cli, run_dir,
 )
-from scope_launch import CODEGRAPH, repository_instructions, run_read_only
+from scope_launch import codegraph_line, refresh_index, repository_instructions, run_read_only
 
 TEMPLATE = SCOPE_ROOT / "commands" / "overseer" / "drift-audit.md"
 CHECKPOINTS = ("gate1", "plan", "merge", "targeted")
@@ -28,7 +28,7 @@ def audit_prompt(text: str, root: Path, cli: str) -> str:
         "## Assignment (appended by Scope)", "",
         f"- Repository root: `{root}`",
         f"- Repository instructions: {repository_instructions(cli)}",
-        f"- CodeGraph: {CODEGRAPH}",
+        f"- CodeGraph: {codegraph_line(cli, root, reviewer=True)}",
         "- Read-only: modify, stage or commit nothing. Return the report as your final answer.",
     ]
     return text.rstrip() + "\n\n" + "\n".join(assignment) + "\n"
@@ -74,6 +74,7 @@ def cmd_audit(args: argparse.Namespace) -> None:
             raise ScopeError(f"unknown reviewers {unknown}; the project's audit reviewers: {sorted(by_name)}")
         auditors = [by_name[name] for name in args.reviewers.split(",")]
     out = run_dir(root, f"oversight-{args.name}", f"{'+'.join(epics)}-{args.checkpoint}")
+    refresh_index(root, policy["timeouts_seconds"]["codegraph_sync"])
     with ThreadPoolExecutor(max_workers=len(auditors)) as pool:
         rows = list(pool.map(lambda spec: _audit(spec, text, root, policy, out), auditors))
     emit({

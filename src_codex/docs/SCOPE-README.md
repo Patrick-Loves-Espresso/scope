@@ -73,9 +73,11 @@ Each epic keeps six files: `details.md`, `acceptance-criteria.md`,
 `approvals.yaml`, `plan.md`, `review.md`, and `verification.yaml`. Git records
 everything else. Raw logs go to the git-ignored `tmp_debug/scope-runs/`.
 
-CodeGraph is optional. When its CLI is installed, the lifecycle commands sync
-the index once per command and workers and reviewers query it read-only. Add
-`.codegraph/` to the target repository's `.gitignore`.
+CodeGraph is optional. When its CLI is installed, the lifecycle commands create
+the index of each checkout once, the runner syncs it before each job, and
+workers and reviewers query it read-only: Codex reviewers through the CodeGraph
+MCP server the runner gives them (their sandbox cannot open the index), everyone
+else through the CLI. Add `.codegraph/` to the target repository's `.gitignore`.
 
 See [the architecture](scope-architecture.md) for the full lifecycle.
 

@@ -74,12 +74,14 @@ agents serve workflows outside these lifecycle commands.
 
 Use Obsidian MCP when available for prior decisions, lessons, and related product notes. If Obsidian MCP is unavailable, continue with local repo search and say that MCP was unavailable.
 
-CodeGraph is optional and used only through its command-line interface. When
-the `codegraph` CLI is installed, the lifecycle commands run one `codegraph
-sync` (or `init` when `.codegraph/` is missing and git-ignored) in the checkout
-or worktree they work in. Workers and reviewers only query it (`explore`,
-`node`, `query`, `callers`, `callees`, `impact`, `affected`) and confirm what
-matters in the source; they never initialize, index, or sync it.
+CodeGraph is optional. When the `codegraph` CLI is installed, the lifecycle
+commands run `codegraph init` once in a checkout or worktree whose
+`.codegraph/` is missing and git-ignored, and Scope's runner syncs the index
+before each job. Workers and reviewers only query it (`explore`, `node`,
+`callers`, `impact`, `affected`) and confirm what matters in the source; they
+never initialize, index, or sync it. Codex reviewers query it through the
+CodeGraph MCP server the runner gives each run, because their read-only sandbox
+cannot open the index; everyone else uses the CLI.
 
 ## Quality Bar
 

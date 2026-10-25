@@ -51,6 +51,18 @@ def test_both_auditors_review_the_same_prompt_read_only(project: Path, fake: Pat
     assert codex[codex.index("--sandbox") + 1] == "read-only"
 
 
+def test_auditors_get_codegraph_their_way_after_one_sync(project: Path, fake: Path, prompt: Path,
+                                                         monkeypatch: pytest.MonkeyPatch) -> None:
+    (project / ".codegraph").mkdir()
+    monkeypatch.setenv("FAKE_MESSAGE", "# Report\n\nNone.")
+    logs = Path(audit(project, prompt)["logs"])
+    assert [call["provider"] for call in calls(fake)].count("codegraph") == 1 and calls(fake)[0]["args"] == ["sync", "."]
+    assert "`codegraph_explore` MCP tool" in (logs / "prompt-auditor-codex.md").read_text()
+    assert "`codegraph impact <symbol>`" in (logs / "prompt-auditor-claude.md").read_text()
+    codex = next(call["args"] for call in calls(fake) if call["provider"] == "codex")
+    assert 'mcp_servers.codegraph.command="codegraph"' in codex
+
+
 def test_an_unfilled_template_is_refused(project: Path, fake: Path, tmp_path: Path) -> None:
     raw = tmp_path / "raw.md"
     raw.write_text(TEMPLATE.read_text())
