@@ -43,9 +43,8 @@ fi
 cd "$WT"
 ```
 
-If `codegraph` is on PATH, index the worktree: `codegraph sync` when
-`.codegraph/` exists, else `codegraph init` when
-`git check-ignore -q .codegraph/` succeeds.
+If `codegraph` is on PATH and `.codegraph/` is missing, run `codegraph init`
+when `git check-ignore -q .codegraph/` succeeds (the runner syncs it per job).
 
 **Reviewers.** The checks below and the audit use the epic's `audit`
 reviewers. Run `$PY "$S/scope_reviewers.py" show --epic $EPIC` now: without an

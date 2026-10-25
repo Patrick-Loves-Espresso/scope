@@ -263,7 +263,9 @@ Every script prints JSON. Provider invocation keeps the flags proven in Scope
 only read tools and read-only `git`/`codegraph` commands; Codex runs `exec
 --ephemeral --ignore-user-config` with a `read-only` sandbox for reviewers and
 `workspace-write` for workers (implementers in a worktree also get the git
-directory via `--add-dir` so they can commit); OpenCode runs `--pure --agent
+directory via `--add-dir` so they can commit), and its reviewers get the
+CodeGraph MCP server through `-c mcp_servers.codegraph.*` when the checkout has
+an index (U40); OpenCode runs `--pure --agent
 plan` with a private data directory per run, because concurrent runs on its
 shared SQLite database fail. Claude workers run with background tasks
 disabled and shell timeouts raised to the job's limits, so a long test run
@@ -445,9 +447,14 @@ contract forms (OpenAPI, schemas, SQL) in `13-specs/`.
 **12.7 Local files for documentation.** Docs are Markdown in `docs/`, versioned
 with the code.
 
-**12.8 CodeGraph is optional.** When the CLI is installed, commands sync the
-index once and workers and reviewers query it read-only; Scope does not manage
-its lifecycle.
+**12.8 CodeGraph is optional.** When the CLI is installed, `/epic_refine` and
+`/implement` create a checkout's missing index once, the runner syncs it before
+each job (`scope_launch.refresh_index`), and workers and reviewers query it
+read-only. Codex reviewers use the CodeGraph MCP server, which Codex starts
+outside its read-only sandbox, where the CLI cannot open the index; Claude jobs
+keep the CLI, because safe mode loads no MCP server. A checkout without its own
+index gets no CodeGraph instruction: CodeGraph would answer from a parent
+folder's index, which describes other code (U40).
 
 ---
 

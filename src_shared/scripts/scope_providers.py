@@ -109,8 +109,10 @@ def command(
     prompt: str,
     read_only_commands: Sequence[str] = (),
     add_dirs: Sequence[Path] = (),
+    codegraph_mcp: dict[str, Any] | None = None,
 ) -> list[str]:
-    """Build the provider command line; stdin providers receive the prompt on stdin."""
+    """Build the provider command line; stdin providers receive the prompt on stdin. `codegraph_mcp` gives a Codex
+    run the CodeGraph MCP server (U40), which Codex starts outside its sandbox."""
     if provider == "claude":
         if write:
             tools, allowed, denied = WORKER_TOOLS, WORKER_TOOLS, WORKER_DENIED
@@ -131,6 +133,8 @@ def command(
         result = ["codex", "exec", "--ephemeral", "--ignore-user-config", "--cd", str(root)]
         for directory in add_dirs:
             result += ["--add-dir", str(directory)]
+        for key, value in (codegraph_mcp or {}).items():  # JSON strings and string arrays are valid TOML
+            result += ["-c", f"mcp_servers.codegraph.{key}={json.dumps(value)}"]
         result += [
             "--model", model, "-c", f'model_reasoning_effort="{effort}"',
             "--sandbox", "workspace-write" if write else "read-only",
