@@ -494,6 +494,7 @@ def test_without_an_index_codegraph_is_neither_offered_nor_synced(planned, fake)
     assert not any("mcp_servers" in arg for arg in codex)
     prompt = (Path(result["logs"]) / "prompt-reviewer-codex.md").read_text()
     assert "- CodeGraph: not available in this checkout" in prompt
+    assert "- Run logs:" not in prompt  # the main checkout holds its own logs
 
 
 def test_workers_sync_the_index_first_and_a_failed_sync_does_not_stop_them(planned, fake, monkeypatch):

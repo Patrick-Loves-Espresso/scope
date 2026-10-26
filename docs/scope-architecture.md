@@ -99,7 +99,7 @@ your-project/
 │   ├── oversight/<name>.md      # an overseer's state and handoff; <name>/checks/ and <name>/notes/ beside it
 │   └── lessons-learned/
 ├── wip/<epic-id>/               # worktree on branch epic/<epic-id>
-└── tmp_debug/scope-runs/<epic>/ # git-ignored prompts, transcripts, and test logs
+└── tmp_debug/scope-runs/<epic>/ # git-ignored prompts, transcripts, and test logs, worktree jobs' included
 ```
 
 ---
