@@ -51,7 +51,7 @@ for genuine product decisions.
 
 ### Session Continuity
 
-- **`/session-handoff`** / **`scope:session-handoff`** — Create an ephemeral `session-handoff.md` at the active worktree or project root when a long session has become inefficient. The file captures enough durable context for a fresh agent to assess the state and recommend the next course of action without treating unconfirmed next steps as instructions. The file is overwritten on each run and should not be tracked by git.
+- **`/session-handoff`** / **`scope:session-handoff`** — Create an ephemeral `session-handoff.md` at the active worktree or project root when a long session has become inefficient. The file captures enough durable context for a fresh agent to assess the state and recommend the next course of action without treating unconfirmed next steps as instructions. The file is overwritten on each run and should not be tracked by git. With Director installed, it sends you to Director's handoff instead (Claude Code `/director:handoff`, Codex `$director-handoff`).
 
 ## How It Works
 
@@ -254,6 +254,25 @@ judged. To add up every epic, run
 | opus        | opus/xhigh       | 3    | 21m 40s | 0 (0)    | 4 (2) | 3 (3) | 6     | 1        |
 | gpt-6-1-sol | gpt-6.1-sol/xhigh | 3   | 18m 05s | 1 (1)    | 3 (1) | 1 (1) | 4     | 1        |
 ```
+
+## Running Scope with Director
+
+Director, a session-state tool, is optional: Scope works the same without it.
+When it is installed:
+
+- Only the session you talk to sees Director. Scope's runner starts every
+  planner, implementer, reviewer, adjudicator, and overseer auditor with
+  Director's hooks switched off (`DIRECTOR_BIN` set to a missing path), so no
+  reviewer is anchored by the builder's log.
+- Scope adds `.director/` to the repository's shared git exclude, so Director's
+  per-checkout folder is never committed, from the main checkout or an epic
+  worktree.
+- `/session-handoff` (Codex: `scope:session-handoff`) sends you to Director's
+  handoff instead of writing `session-handoff.md`.
+- Each fact keeps one home: scope and approvals in `acceptance-criteria.md` and
+  `approvals.yaml`; how the epic is built, your rulings included, in `plan.md`;
+  durable decisions in ADRs; where a session stopped, paused work, and
+  permissions in Director's handoff. Scope never runs `director promote`.
 
 ## Project Structure (Target Project)
 

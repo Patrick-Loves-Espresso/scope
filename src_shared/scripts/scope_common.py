@@ -72,7 +72,20 @@ def git(root: Path, *args: str, check: bool = True) -> str:
 
 def repo_root(value: str | None) -> Path:
     start = Path(value) if value else Path.cwd()
-    return Path(git(start, "rev-parse", "--show-toplevel")).resolve()
+    root = Path(git(start, "rev-parse", "--show-toplevel")).resolve()
+    _exclude_director(root)
+    return root
+
+
+def _exclude_director(root: Path) -> None:
+    """Director writes `.director/` in every checkout a hooked session touches; one line in the common exclude, which
+    every worktree reads, keeps it out of commits and merges (U31, L39). Harmless without Director."""
+    exclude = Path(git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "info" / "exclude"
+    text = exclude.read_text(encoding="utf-8") if exclude.is_file() else ""
+    if ".director/" not in text.splitlines():
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        with exclude.open("a", encoding="utf-8") as handle:
+            handle.write(("\n" if text and not text.endswith("\n") else "") + ".director/\n")
 
 
 def main_root(root: Path) -> Path:

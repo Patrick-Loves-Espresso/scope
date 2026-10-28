@@ -269,6 +269,12 @@ keep the original wording where it still holds.
   `feat/current-model-guidance`: Claude workers at `high`, targeted test runs
   within a story, the job's time limit as guidance, no "reasoning" requested
   from reviewers, lean project instructions in the README
+- [x] 2026-10-28 Director cohabitation implemented (U29–U32, user: "implement
+  Director cohabitation as planned") on `feat/director-cohabitation`, after
+  merging `main` into it: L38 `DIRECTOR_BIN` disabled for every launched
+  process, L39 `.director/` in the common exclude, L40 `/session-handoff`
+  Step 0 and its exclude moved to `--git-common-dir`, L41 docs and the
+  simplification plan's revision 8; O9 settled with the installed Director
 
 ## Configurable reviewers (U14–U25, implemented 2026-10-02)
 
@@ -493,12 +499,28 @@ decisions on O4–O9):
   for OpenCode reviewers only, or something else? Isolating `CODEX_HOME` would
   need a copy of the Codex login and is not recommended.
 
-Resolved 2026-10-02: O4–O7 → U31. Resolved 2026-10-03: O8 → U32. O9 remains
-open.
+Resolved 2026-10-02: O4–O7 → U31. Resolved 2026-10-03: O8 → U32. Resolved
+2026-10-28: O9, with the installed Director (below).
 - O8 Confirm L42 (no `/wrap_epic` line) and L43 (no `director promote` in
   Scope).
 - O9 A run with a real Director needs a download (Go through Homebrew to build
   it, or a Director release binary): sandboxed run, real install, or none?
+
+**O9, settled 2026-10-28** with Director v1.19.0, installed by the user (Claude
+hooks only; no `~/.codex/hooks.json`), its hub isolated with `DIRECTOR_HUB` in
+a scratch folder. Each case ran a one-word Claude Haiku job in a fresh git
+repository (`tmp_debug/director-o9/o9.py`, output `o9.out`):
+
+| Case | `.director/` written | Hub records added |
+|---|---|---|
+| A: Scope's launcher (`providers.command` and `run`: safe mode, `DIRECTOR_BIN` disabled) | no | 0 |
+| B: plain `claude -p`, hooks on (control) | yes | 2 |
+| C: no safe mode, `DIRECTOR_BIN` disabled (L38 alone) | no | 0 |
+| D: safe mode alone, `DIRECTOR_BIN` unset (V6) | no | 0 |
+
+Director's hook shims in v1.19.0 still exit 0 when `DIRECTOR_BIN` names a
+missing program (V4). Codex was not run: Director's Codex hooks are not
+installed here, and V1 still describes Codex 0.160.0.
 
 ## Decision log
 
@@ -548,7 +570,7 @@ open.
 | L8 | Code lines counted with `pygments` tokens (comments and docstrings excluded); `pygments` added to requirements, `filelock`/`jsonschema` dropped | Multi-language, one small maintained dependency (already pulled in by pytest) |
 | L9 | Any unavailable or invalid reviewer is replaced by the fallback; verification by an unavailable raising reviewer also falls back | Plan D10; no all-provider barrier |
 | L10 | Antigravity's in-provider flash-model fallback is not carried over | Recovery machinery; Gemini is on-request only |
-| L11 | `DIRECTOR_BIN` is not set by the runner yet | D16: Director is integrated only after this rebuild |
+| L11 | `DIRECTOR_BIN` is not set by the runner yet (superseded by U31: L38 sets it for every launched process) | D16: Director is integrated only after this rebuild |
 | L13 | `production-code-rules.md` and `test-strategy-guide.md` folded into `simplicity-and-size.md` and deleted; `developer-checklist.md` kept and rewritten | Plan §6 Step 1.2 ("fold or delete the rest"; the developer agent "and its checklist" reference the new file) |
 | L14 | `/sync_product` also resolves archived epics under `docs/epics/_implemented/` | `/wrap_epic` recommends it after the merge, when the epic is already archived |
 | L15 | Installer version 2.0.0 (both installers) | Breaking replacement of the lifecycle |
