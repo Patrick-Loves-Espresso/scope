@@ -65,8 +65,9 @@ fresh provider processes through Scope's launcher:
 
 Workers run on the provider that hosts the command. Scope appends the
 simplicity-and-size rules to every worker and reviewer prompt: build the
-minimum that satisfies the criteria, story complexity at most 7/10, modules at
-most 450 code lines. Tests are executed by Scope's runner, never reported by a
+minimum that satisfies the criteria, story complexity at most 7/10, stories of
+about 200 production lines at complexity 6–7 and 300 below (a guideline),
+modules at most 450 code lines. Tests are executed by Scope's runner, never reported by a
 model.
 
 Each epic keeps six files: `details.md`, `acceptance-criteria.md`,

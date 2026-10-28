@@ -57,8 +57,9 @@ below, then stop.
 - Milestones that each end in something observable. Stories as a checklist:
   complexity 0–7 (split anything above), an estimate in production code lines
   added or changed (the size check counts every added or modified line), and
-  the criteria each story delivers. The story estimates sum to the plan
-  estimate.
+  the criteria each story delivers. Follow the story-size guideline in the
+  governance (about 200 production lines at complexity 6–7, 300 below). The
+  story estimates sum to the plan estimate.
 - Validation commands that write JUnit XML with standard tooling, lint and type
   checks with the ids `lint` and `types` (a project without such a tool lists
   the id in `unavailable_evidence` with the reason), and a coverage check of

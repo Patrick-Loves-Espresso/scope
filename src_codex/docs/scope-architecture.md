@@ -382,9 +382,10 @@ and reviewer receives. It states the over-engineering tendency it counters and
 the rules: build the minimum that satisfies the criteria, validate only at
 boundaries, handle only errors that can occur, no single-use abstractions,
 reuse first, fewer concepts and lines. Story complexity is scored 0–10 with a
-maximum of 7; modules target 350 code lines with a hard limit of 450. Above a
-limit the agent splits or records an exception that a reviewer judges; the
-runner only reports.
+maximum of 7; a story-size guideline, not a limit, suggests about 200
+production code lines at complexity 6–7 and 300 below (U42); modules target
+350 code lines with a hard limit of 450. Above a limit the agent splits or
+records an exception that a reviewer judges; the runner only reports.
 
 ---
 

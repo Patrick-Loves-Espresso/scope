@@ -69,6 +69,19 @@ reviewer must accept it.
 | 7 | Several boundaries, new persisted state, or an external integration with real failure modes; still one clear, testable outcome |
 | 8–10 | Split: several new concepts at once, concurrency or distributed state, a risky migration, or high uncertainty |
 
+## Story size (guideline)
+
+A guideline, not a limit. Count production code only: no tests, docstrings,
+comments, prompts (prompt text, in a file or in a string), or configuration
+files.
+
+- Complexity 6 or 7: about 200 lines at most.
+- Complexity 0–5: about 300 lines at most.
+
+A story above it is a hint to split along a natural seam (a component, a
+boundary, a migration). Keep it whole when splitting would cut one testable
+outcome in two.
+
 ## Module size
 
 Code lines exclude blank lines, comments, and docstrings.
