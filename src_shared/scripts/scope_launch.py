@@ -19,7 +19,7 @@ import scope_review as reviews
 import scope_verify
 from scope_common import (
     SCOPE_ROOT, ScopeError, base_commit, commit_paths, emit, find_epic, git, load_policy,
-    now, repo_root, run_cli, run_dir, section,
+    main_root, now, repo_root, run_cli, run_dir, section,
 )
 
 STATUS = re.compile(r"^STATUS:\s*(done|needs_user|needs_check|blocked)\s*$", re.MULTILINE)
@@ -236,6 +236,10 @@ def reviewer_prompt(args: argparse.Namespace, root: Path, epic: Path, review: re
     ]
     if args.workflow != "refine":
         assignment.append(f"- Changes under review: `git diff {base_commit(root)}...HEAD`")
+    main = main_root(root)
+    if main != root:  # the runner's logs are git-ignored in the main checkout, so no worktree has them
+        assignment.append(f"- Run logs: Scope keeps every job's logs under `{main}/tmp_debug/scope-runs/`, not in this "
+                          f"worktree; a `logs:` path in `verification.yaml` is relative to `{main}`.")
     parts.append("\n".join(assignment))
     if findings:
         blocks = "\n\n".join(reviews.finding_block(review, key) for key in findings)
