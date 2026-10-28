@@ -32,8 +32,7 @@ The epic folder must already be archived under `docs/epics/_implemented/` on
 this branch and the tree must be clean. If `covers` reports that no passing
 verification covers the current commit, run
 `$PY "$S/scope_verify.py" run --epic $EPIC --milestone final` first; on failure,
-return to `/implement` step 2. If `codegraph` is on PATH, run `codegraph sync`
-in the worktree when `.codegraph/` exists.
+return to `/implement` step 2.
 
 **Reviewers.** Run `$PY "$S/scope_reviewers.py" show --epic $EPIC`. Without an
 `audit` adjudicator, stop: the user chooses one with `/scope_reviewers`

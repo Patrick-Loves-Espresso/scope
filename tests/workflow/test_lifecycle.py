@@ -87,10 +87,13 @@ def audit(worktree: Path) -> None:
     assert scope("scope_verify.py", "covers", "--epic", EPIC, cwd=worktree)["covered"]
     full = review(worktree, "audit", "full")
     assert full["summary"]["pending"] == {"needs_disposition": ["A1.codex.1"]}
+    main = worktree.parents[1]  # a worktree has no git-ignored run logs: reviewers are told where they are
+    sent = (Path(full["logs"]) / "prompt-reviewer-codex.md").read_text()
+    assert f"- Run logs: Scope keeps every job's logs under `{main}/tmp_debug/scope-runs/`" in sent
     assert work(worktree, "implementer", "Resolve the open audit findings in review.md.")["status"] == "done"
     assert not status(worktree, "audit")["fresh"]
     remediation = scope("scope_verify.py", "run", "--epic", EPIC, "--milestone", "remediation", cwd=worktree)
-    assert remediation["outcome"] == "passed"
+    assert remediation["outcome"] == "passed" and (main / remediation["logs"]).is_dir()
     verified = review(worktree, "audit", "verify")
     assert verified["reviewers"][0]["name"] == "codex"
     assert verified["summary"]["settled"], verified["summary"]

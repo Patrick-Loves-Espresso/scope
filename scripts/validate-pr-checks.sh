@@ -208,9 +208,11 @@ check_install() {
     for path in \
       commands/epic_refine.md commands/implement.md commands/audit_epic.md commands/wrap_epic.md \
       commands/epic_refine/reviewer-refinement.md commands/audit_epic/reviewer-audit.md \
+      commands/overseer.md commands/overseer/drift-audit.md commands/overseer/oversight.md \
       workers/planner.md workers/implementer.md workers/reviewer.md \
       governance/simplicity-and-size.md governance/developer-checklist.md config/scope-policy.yaml \
-      scripts/scope_common.py scripts/scope_providers.py scripts/scope_reviewers.py agents/developer.md \
+      scripts/scope_common.py scripts/scope_providers.py scripts/scope_reviewers.py scripts/scope_oversee.py \
+      agents/developer.md \
       agents/architect.md \
       agents/product-owner.md skills/project-documentation/SKILL.md \
       skills/project-documentation/templates-technical-arc42-c4/epic/details.md \
@@ -222,7 +224,7 @@ check_install() {
       requirements.txt; do
       test -f "$tmpdir/$root/$path" || fail "install is missing $root/$path"
     done
-    for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py; do
+    for executable in scope_launch.py scope_review.py scope_verify.py scope_check.py scope_oversee.py; do
       test -x "$tmpdir/$root/scripts/$executable" || fail "$root/scripts/$executable is not executable"
     done
     for path in \
@@ -421,6 +423,19 @@ check_lifecycle_contract() {
   grep -n 'story_complexity_max: 7' src_shared/config/scope-policy.yaml
 }
 
+check_lint_types() {
+  local python
+
+  section "Lint and type checks"
+
+  python="$(python_cmd)"
+  "$python" -m ruff --version >/dev/null 2>&1 && "$python" -m mypy --version >/dev/null 2>&1 ||
+    fail "ruff and mypy are required; run: python3 -m pip install -r requirements-dev.txt"
+  mkdir -p tmp_debug
+  "$python" -m ruff check --cache-dir tmp_debug/ruff-cache src_shared/scripts tests
+  "$python" -m mypy --ignore-missing-imports --cache-dir tmp_debug/mypy-cache src_shared/scripts
+}
+
 check_tests() {
   local python
 
@@ -451,6 +466,7 @@ main() {
   check_codex_override_sources
   check_lifecycle_contract
   check_budgets
+  check_lint_types
   check_tests
 
   section "All PR checks passed"

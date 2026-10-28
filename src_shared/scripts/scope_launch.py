@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+import contextlib
 from pathlib import Path
 import re
 import shlex
+import shutil
+import subprocess
 import sys
 from typing import Any
 
@@ -16,7 +19,7 @@ import scope_review as reviews
 import scope_verify
 from scope_common import (
     SCOPE_ROOT, ScopeError, base_commit, commit_paths, emit, find_epic, git, load_policy,
-    now, repo_root, run_cli, run_dir, section,
+    main_root, now, repo_root, run_cli, run_dir, section,
 )
 
 STATUS = re.compile(r"^STATUS:\s*(done|needs_user|needs_check|blocked)\s*$", re.MULTILINE)
@@ -38,33 +41,60 @@ MISSIONS = {"refine": REVIEW_MISSIONS, "audit": REVIEW_MISSIONS, "implement": {"
 RECHECKABLE = {"closed", "closed_unverified", "closed_rejected", "accepted_tradeoff"}
 REPORTED = ("name", "role", "cli", "model", "effort", "optional", "status", "decision", "error", "duration_seconds",
             "retried_after")
-CODEGRAPH = (
-    "if `.codegraph/` exists and the `codegraph` CLI is installed, use its read-only queries "
-    "(`explore`, `node`, `query`, `callers`, `callees`, `impact`, `affected`) before broad searches and "
-    "confirm what matters in the source. Never run `init`, `index`, `sync`, or anything that changes the index."
+CODEGRAPH_QUERIES = (
+    '`codegraph explore "<question or symbol names>" --path .`, `codegraph node <symbol>`, '
+    "`codegraph callers <symbol>`, `codegraph impact <symbol>`, `codegraph affected --stdin < <file list>`"
 )
+
+
+def codegraph_index(root: Path) -> bool:
+    return (root / ".codegraph").is_dir() and shutil.which("codegraph") is not None
+
+
+def codegraph_line(cli: str, root: Path, reviewer: bool) -> str:
+    """The assignment's CodeGraph line (U40). A Codex reviewer queries the MCP server Scope gives it: its read-only
+    sandbox cannot open the index. Without an index in this checkout, CodeGraph would answer from a parent folder's."""
+    if not codegraph_index(root):
+        return ("not available in this checkout (no `.codegraph/` index or no `codegraph` CLI); do not use it, since "
+                "a parent folder's index would answer for other code.")
+    if cli == "codex" and reviewer:
+        return (f"use the `codegraph_explore` MCP tool with `projectPath` `{root}` for how code works, a flow, callers "
+                "and impact, before broad searches; confirm what matters in the source. Do not run the `codegraph` "
+                "command: this sandbox cannot open its index.")
+    return (f"use its read-only queries before broad searches: {CODEGRAPH_QUERIES}; confirm what matters in the "
+            "source. Never run `init`, `index`, `sync`, or anything else that changes the index.")
+
+
+def refresh_index(root: Path, timeout: float) -> None:
+    """Sync the checkout's CodeGraph index before a job (U40). A failure is ignored: CodeGraph exits non-zero while its
+    background server holds the index, and that server keeps it in sync."""
+    if codegraph_index(root):
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(["codegraph", "sync", "."], cwd=root, capture_output=True, timeout=timeout)
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8").rstrip()
 
 
-def _instructions(host: str) -> str:
+def repository_instructions(host: str) -> str:
     if host == "claude":
         return ("Claude safe mode does not load project instructions: read CLAUDE.md once if it exists, "
-                "otherwise AGENTS.md.")
+                "with every file it imports through an `@path` line, otherwise AGENTS.md.")
     return "follow the AGENTS.md instructions Codex supplies."
 
 
-def worker_prompt(role: str, host: str, root: Path, epic: Path, epic_id: str, task: str) -> str:
+def worker_prompt(role: str, host: str, root: Path, epic: Path, epic_id: str, task: str, hours: float) -> str:
     runner = f"{shlex.quote(sys.executable)} {shlex.quote(str(SCOPE_ROOT / 'scripts' / 'scope_verify.py'))}"
     lines = [
         _read(SCOPE_ROOT / "workers" / f"{role}.md"), "", "## Assignment", "",
         f"- Epic: `{epic_id}`, folder `{epic.relative_to(root)}`",
         f"- Working root: `{root}`",
         f"- Templates: `{TEMPLATES}`",
-        f"- Repository instructions: {_instructions(host)}",
-        f"- CodeGraph: {CODEGRAPH}",
+        f"- Repository instructions: {repository_instructions(host)}",
+        f"- CodeGraph: {codegraph_line(host, root, reviewer=False)}",
+        f"- Time: this job is stopped after {hours:g} hours. Pace the work to commit and report before then; never "
+        "cut a story, a test, or an edge case short to fit: stop at a clean point and report progress instead.",
     ]
     if role == "implementer":
         lines += [
@@ -84,7 +114,7 @@ def cmd_work(args: argparse.Namespace) -> None:
     if problem:
         raise ScopeError(problem)
     out = run_dir(root, args.epic, args.role)
-    prompt = worker_prompt(args.role, args.host, root, epic, args.epic, args.task)
+    prompt = worker_prompt(args.role, args.host, root, epic, args.epic, args.task, timeouts[args.role] / 3600)
     (out / "prompt.md").write_text(prompt, encoding="utf-8")
     add_dirs = []
     if args.host == "codex" and args.role == "implementer":
@@ -93,9 +123,14 @@ def cmd_work(args: argparse.Namespace) -> None:
         args.host, model=selected["model"], effort=selected["effort"], root=root, write=True,
         output_path=out / "message.md", prompt=prompt, add_dirs=add_dirs,
     )
+    # Claude workers keep long test runs in the foreground: a --print session ends without waiting for them.
+    foreground = {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1",
+                  "BASH_DEFAULT_TIMEOUT_MS": str(timeouts["validation_command"] * 1000),
+                  "BASH_MAX_TIMEOUT_MS": str(timeouts[args.role] * 1000)} if args.host == "claude" else None
+    refresh_index(root, timeouts["codegraph_sync"])
     start = git(root, "rev-parse", "HEAD")
     result = providers.run(argv, provider=args.host, prompt=prompt, cwd=root, stdout_path=out / "stdout.log",
-                           stderr_path=out / "stderr.log", timeout=timeouts[args.role])
+                           stderr_path=out / "stderr.log", timeout=timeouts[args.role], env=foreground)
     message, usage = providers.final_message(args.host, out / "stdout.log", out / "message.md")
     (out / "message.md").write_text(message, encoding="utf-8")
     statuses = STATUS.findall(message)
@@ -190,16 +225,21 @@ def _assignments(args: argparse.Namespace, review: reviews.Review, chosen: dict[
     return list(grouped.values())
 
 
-def reviewer_prompt(args: argparse.Namespace, root: Path, epic: Path, review: reviews.Review, findings: dict) -> str:
+def reviewer_prompt(args: argparse.Namespace, root: Path, epic: Path, review: reviews.Review, findings: dict,
+                    cli: str) -> str:
     parts = [_read(SCOPE_ROOT / "workers" / "reviewer.md")]
     if args.mission == "full":
         parts.append(_read(FOCUS[args.workflow]))
     assignment = [
         "## Assignment", "", f"- Mission: {args.mission}", f"- Epic: `{args.epic}`, folder `{epic.relative_to(root)}`",
-        f"- Repository root: `{root}`", f"- CodeGraph: {CODEGRAPH}",
+        f"- Repository root: `{root}`", f"- CodeGraph: {codegraph_line(cli, root, reviewer=True)}",
     ]
     if args.workflow != "refine":
         assignment.append(f"- Changes under review: `git diff {base_commit(root)}...HEAD`")
+    main = main_root(root)
+    if main != root:  # the runner's logs are git-ignored in the main checkout, so no worktree has them
+        assignment.append(f"- Run logs: Scope keeps every job's logs under `{main}/tmp_debug/scope-runs/`, not in this "
+                          f"worktree; a `logs:` path in `verification.yaml` is relative to `{main}`.")
     parts.append("\n".join(assignment))
     if findings:
         blocks = "\n\n".join(reviews.finding_block(review, key) for key in findings)
@@ -210,30 +250,38 @@ def reviewer_prompt(args: argparse.Namespace, root: Path, epic: Path, review: re
     return "\n\n".join(parts) + "\n"
 
 
-def _run_reviewer(args, root, epic, review, policy, out, assignment, suffix: str = "") -> dict[str, Any]:
-    spec = assignment["reviewer"]
-    name, cli = spec["name"], spec["cli"]
-    row = {**spec, "decision": None, "duration_seconds": 0.0, "credit": assignment["credit"]}
+def run_read_only(spec: dict[str, Any], prompt: str, root: Path, policy: dict[str, Any], out: Path,
+                  label: str) -> dict[str, Any]:
+    """Run one read-only reviewer on `prompt` with its logs under `out`: status (unavailable, timed_out, failed or
+    completed), error, the final text, and duration_seconds. Shared by epic reviews and overseer audits."""
+    cli = spec["cli"]
     problem = providers.preflight(cli, spec["model"], policy["timeouts_seconds"]["preflight"],
                                   policy["min_cli_versions"].get(cli))
     if problem:
-        return {**row, "status": "unavailable", "error": problem}
-    prompt = reviewer_prompt(args, root, epic, review, assignment["findings"])
-    label = f"{spec['role']}-{name}{suffix}"
+        return {"status": "unavailable", "error": problem, "text": "", "duration_seconds": 0.0}
     (out / f"prompt-{label}.md").write_text(prompt, encoding="utf-8")
-    timeout = policy["timeouts_seconds"]["reviewer"]
-    index = root / ".codegraph"  # a read-only Codex sandbox cannot open the CodeGraph database otherwise
     argv = providers.command(cli, model=spec["model"], effort=spec["effort"], root=root, write=False,
                              output_path=out / f"review-{label}.md", prompt=prompt,
                              read_only_commands=policy["reviewer_read_only_commands"],
-                             add_dirs=[index] if cli == "codex" and index.is_dir() else [])
+                             codegraph_mcp=policy["codegraph_mcp"] if cli == "codex" and codegraph_index(root) else None)
     result = providers.run(argv, provider=cli, prompt=prompt, cwd=root, stdout_path=out / f"{label}.stdout",
-                           stderr_path=out / f"{label}.stderr", timeout=timeout)
+                           stderr_path=out / f"{label}.stderr", timeout=policy["timeouts_seconds"]["reviewer"])
     text, _ = providers.final_message(cli, out / f"{label}.stdout", out / f"review-{label}.md")
-    row.update(duration_seconds=result["duration_seconds"], text=text)
+    row = {"status": "completed", "error": None, "text": text, "duration_seconds": result["duration_seconds"]}
     if result["timed_out"] or result["exit_code"] != 0 or not text.strip():
         stderr = (out / f"{label}.stderr").read_text(encoding="utf-8", errors="replace").strip()
-        return {**row, "status": "timed_out" if result["timed_out"] else "failed", "error": stderr[-500:]}
+        row.update(status="timed_out" if result["timed_out"] else "failed", error=stderr[-500:])
+    return row
+
+
+def _run_reviewer(args, root, epic, review, policy, out, assignment, suffix: str = "") -> dict[str, Any]:
+    spec = assignment["reviewer"]
+    row = {**spec, "decision": None, "duration_seconds": 0.0, "credit": assignment["credit"]}
+    prompt = reviewer_prompt(args, root, epic, review, assignment["findings"], spec["cli"])
+    row.update(run_read_only(spec, prompt, root, policy, out, f"{spec['role']}-{spec['name']}{suffix}"))
+    if row["status"] != "completed":
+        return row
+    text = row["text"]
     row["decision"] = reviews.decision(text)
     try:
         if row["decision"] not in DECISIONS[args.mission]:
@@ -318,6 +366,7 @@ def cmd_review(args: argparse.Namespace) -> None:
     commit = git(root, "rev-parse", "HEAD")
     size = scope_verify.size_report(root, epic, policy) if args.size else None
     out = run_dir(root, args.epic, f"{args.workflow}-{args.mission}")
+    refresh_index(root, policy["timeouts_seconds"]["codegraph_sync"])
     run_one = lambda assignment: _review_with_retry(args, root, epic, review, policy, out, assignment)  # noqa: E731
     with ThreadPoolExecutor(max_workers=len(assignments)) as pool:
         rows = list(pool.map(run_one, assignments))

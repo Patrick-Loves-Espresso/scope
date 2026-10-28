@@ -2,10 +2,11 @@
 
 # Workers run on the provider that hosts the command (Claude Code or Codex). Claude models are
 # Claude Code aliases that follow the latest model of the family; Codex has no such alias (U27).
+# Claude workers run at high: Anthropic advises reserving xhigh for work with a measured gain (U37).
 workers:
   claude:
-    planner: {model: opus, effort: xhigh}
-    implementer: {model: opus, effort: xhigh}
+    planner: {model: opus, effort: high}
+    implementer: {model: opus, effort: high}
   codex:
     planner: {model: gpt-6.1-sol, effort: xhigh}
     implementer: {model: gpt-6.1-sol, effort: xhigh}
@@ -22,9 +23,11 @@ default_reviewers:
     - {cli: codex, model: gpt-6.1-sol, effort: xhigh}
 mandatory_retries: 1  # a failed mandatory reviewer or adjudicator in refinement or audit is retried once
 
-# Preflight rejects an older CLI. Claude Code 2.1.278 could not run Opus 5.5 (dry run, 2026-09-23).
+# Preflight rejects an older CLI. Claude Code 2.1.278 could not run Opus 5.5 (dry run, 2026-09-23). Codex MCP tool
+# calls under a read-only sandbox were verified on 0.160.0 (U40).
 min_cli_versions:
   claude: "2.1.280"
+  codex: "0.160.0"
 
 timeouts_seconds:
   planner: 7200
@@ -32,12 +35,21 @@ timeouts_seconds:
   reviewer: 3600
   preflight: 30
   validation_command: 3600
+  codegraph_sync: 600
+
+# CodeGraph for Codex reviewers (U40): an MCP server, which Codex starts outside its read-only sandbox, where the
+# CLI cannot open the index. Claude jobs (safe mode loads no MCP server) and Codex workers use the CLI.
+codegraph_mcp: {command: codegraph, args: [serve, --mcp], startup_timeout_sec: 60, tool_timeout_sec: 120}
 
 size:
   growth_threshold: 1.5        # D3: actual above 1.5x the planned cumulative estimate
   module_target_code_lines: 350
   module_limit_code_lines: 450
   story_complexity_max: 7
+
+# Checks every plan declares by these validation ids (type: check), or lists in
+# unavailable_evidence with a reason when the project has no such tool.
+required_checks: [lint, types]
 
 # Read-only shell commands Claude reviewers may run (prefix match).
 reviewer_read_only_commands:

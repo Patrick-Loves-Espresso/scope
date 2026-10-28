@@ -9,14 +9,14 @@ args: "{epic-id}"
 You orchestrate. A fresh planner writes the criteria and the plan; reviewers
 review the plan and an adjudicator settles disputes. Never write the criteria,
 plan, findings, or `approvals.yaml` yourself, and never review the plan
-yourself. You talk to the user; workers and reviewers do not.
-
-Invoking this command authorizes sending the epic's documents and the
-repository to the configured reviewer providers.
+yourself. You talk to the user; workers and reviewers do not. Invoking this
+command authorizes sending the epic's documents and the repository to the
+configured reviewer providers.
 
 ## Setup
 
-Run in the main checkout, not a worktree.
+Run in the main checkout, not a worktree. If a `docs/oversight/*.md` file
+lists this epic, follow `$SCOPE_ROOT/commands/overseer/epic-session.md` too.
 
 ```bash
 EPIC="{epic-id}"
@@ -27,9 +27,8 @@ S="$SCOPE_ROOT/scripts"; PY=python3                # interpreter with Scope's re
 ```
 
 Require exactly one `docs/epics/<epic-dir>/` whose name starts with the epic
-ID, with a `details.md`. If `codegraph` is on PATH, run `codegraph sync` when
-`.codegraph/` exists, or `codegraph init` when it is missing and
-`git check-ignore -q .codegraph/` succeeds.
+ID, with a `details.md`. If `codegraph` is on PATH and `.codegraph/` is missing,
+run `codegraph init` when `git check-ignore -q .codegraph/` succeeds.
 
 An epic planned by an older Scope version: `git rm -r` any of `design.md`,
 `delivery-manifest.yaml`, `file-plan-story-*.yaml`, `refinement-*`,

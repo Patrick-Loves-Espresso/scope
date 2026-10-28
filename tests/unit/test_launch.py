@@ -203,6 +203,18 @@ def test_worker_status_warnings_and_failures(planned, fake, monkeypatch):
     assert "claude --version failed" in work(planned, expect=1)["error"]
 
 
+def test_claude_workers_keep_long_commands_in_the_foreground(planned, fake):
+    work(planned, role="implementer", task="Implement plan.md.")
+    assert calls(fake)[-1]["foreground"] == ["1", "3600000", "14400000"]
+
+
+def test_worker_prompts_give_the_time_limit_as_guidance(planned, fake):
+    work(planned, role="implementer", task="Implement plan.md.")
+    prompt = sorted((planned / "tmp_debug" / "scope-runs").rglob("*-implementer/prompt.md"))[-1].read_text()
+    assert "this job is stopped after 4 hours" in prompt and "never cut a story, a test, or an edge case" in prompt
+    assert "with every file it imports through an `@path` line" in prompt
+
+
 def test_implementer_leaving_changes_uncommitted_is_warned(planned, fake, monkeypatch):
     monkeypatch.setenv("FAKE_MESSAGE", "Done.\nSTATUS: done")
     (planned / "src").mkdir()
@@ -220,7 +232,7 @@ def test_show_preflights_each_reviewer_and_the_adjudicator(planned, fake, monkey
 
 
 def test_a_cli_older_than_the_policy_minimum_is_refused(planned, fake, monkeypatch):
-    monkeypatch.setenv("FAKE_VERSION", "2.1.278")  # the policy requires claude 2.1.280; codex has no minimum
+    monkeypatch.setenv("FAKE_VERSION", "2.1.278")  # the policy requires claude 2.1.280; codex's 0.160.0 is met
     old = "claude CLI claude 2.1.278 is older than 2.1.280; update it"
     shown = reviewers(planned, "show", "--preflight")
     assert shown["refine"]["preflight"] == {"claude": old, "codex": "ready", "adjudicator": "ready"}
@@ -309,6 +321,11 @@ def test_commands_keep_the_harvested_read_only_and_write_flags(tmp_path):
     codex = providers.command("codex", write=True, add_dirs=[tmp_path], **common)
     assert codex[-2:] == ["--json", "-"] and codex[codex.index("--sandbox") + 1] == "workspace-write"
     assert providers.command("codex", write=False, **common)[-1] == "-"
+    mcp = providers.command("codex", write=False, codegraph_mcp={"command": "codegraph", "args": ["serve", "--mcp"],
+                                                                 "startup_timeout_sec": 60}, **common)
+    assert [mcp[i + 1] for i, arg in enumerate(mcp) if arg == "-c" and "mcp_servers" in mcp[i + 1]] == [
+        'mcp_servers.codegraph.command="codegraph"', 'mcp_servers.codegraph.args=["serve", "--mcp"]',
+        "mcp_servers.codegraph.startup_timeout_sec=60"]
     assert providers.command("opencode", write=False, **common)[-1] == "P"
     with pytest.raises(ValueError):
         providers.command("opencode", write=True, **common)
@@ -453,12 +470,40 @@ def test_changed_paths_keep_their_first_character_for_modified_tracked_files(pla
     assert result["warnings"] == [f"planner changed files outside {EPIC_DIR}/: ['pytest.ini']"]
 
 
-def test_codex_reviewers_get_the_codegraph_index_when_it_exists(planned, fake):
+def test_codex_reviewers_get_the_codegraph_mcp_server_and_claude_the_cli_when_an_index_exists(planned, fake):
     (planned / ".codegraph").mkdir()
-    review(planned, "refine", "full")
+    result = review(planned, "refine", "full")
+    providers_called = [c["provider"] for c in calls(fake)]
+    assert providers_called[0] == "codegraph" and calls(fake)[0]["args"] == ["sync", "."]  # once, before the round
+    assert providers_called.count("codegraph") == 1
     codex = next(c["args"] for c in calls(fake) if c["provider"] == "codex")
     claude = next(c["args"] for c in calls(fake) if c["provider"] == "claude")
-    assert codex[codex.index("--add-dir") + 1] == str(planned / ".codegraph") and "--add-dir" not in claude
+    assert 'mcp_servers.codegraph.args=["serve", "--mcp"]' in codex and "--add-dir" not in codex
+    assert "--safe-mode" in claude and not any("mcp_servers" in arg for arg in claude)
+    logs = Path(result["logs"])
+    codex_prompt = (logs / "prompt-reviewer-codex.md").read_text()
+    assert f"`codegraph_explore` MCP tool with `projectPath` `{planned}`" in codex_prompt
+    assert '`codegraph explore "<question or symbol names>" --path .`' in (logs / "prompt-reviewer-claude.md").read_text()
+
+
+def test_without_an_index_codegraph_is_neither_offered_nor_synced(planned, fake):
+    result = review(planned, "refine", "full")
+    work(planned)
+    assert "codegraph" not in [c["provider"] for c in calls(fake)]
+    codex = next(c["args"] for c in calls(fake) if c["provider"] == "codex")
+    assert not any("mcp_servers" in arg for arg in codex)
+    prompt = (Path(result["logs"]) / "prompt-reviewer-codex.md").read_text()
+    assert "- CodeGraph: not available in this checkout" in prompt
+    assert "- Run logs:" not in prompt  # the main checkout holds its own logs
+
+
+def test_workers_sync_the_index_first_and_a_failed_sync_does_not_stop_them(planned, fake, monkeypatch):
+    (planned / ".codegraph").mkdir()
+    monkeypatch.setenv("FAKE_FAIL", "codegraph")
+    assert work(planned)["status"] == "done"
+    assert [c["provider"] for c in calls(fake)] == ["codegraph", "claude"]
+    prompt = sorted((planned / "tmp_debug" / "scope-runs").rglob("*-planner/prompt.md"))[-1].read_text()
+    assert "`codegraph callers <symbol>`" in prompt and "Never run `init`, `index`, `sync`" in prompt
 
 
 def test_explicit_reviewers_must_belong_to_the_epic_and_keep_independence(planned, fake, monkeypatch):

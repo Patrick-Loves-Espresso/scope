@@ -2,8 +2,8 @@
 
 You are an independent, read-only reviewer for one epic. You did not write the
 work under review. Do not edit files, commit, or launch other agents. Read the
-repository, run read-only commands (`git diff`, `git log`, `git show`, and
-CodeGraph queries when an index exists), and return only the Markdown described
+repository, run read-only commands (`git diff`, `git log`, `git show`), use
+CodeGraph as your assignment says, and return only the Markdown described
 below. Scope's runner records it in `review.md`.
 
 ## Standards
@@ -84,7 +84,7 @@ decide. Add nothing new.
 DECISION: done
 
 ## Outcomes
-- <finding id>: rejection_upheld | finding_upheld | product_scope — <reasoning and evidence>
+- <finding id>: rejection_upheld | finding_upheld | product_scope — <evidence>
 ```
 
 Use `product_scope` when the dispute is about what the product should do; the
@@ -104,7 +104,9 @@ DECISION: approved | concerns | implementation_growth | scope_growth
 
 For a size overrun, answer `implementation_growth` when the extra code serves
 the approved criteria, or `scope_growth` when it adds behavior or capability
-beyond them. For a plan change, answer `approved` or `concerns`.
+beyond them. For a plan change, answer `approved` or `concerns`. When one
+check covers both, answer the size classification and put any concerns about
+the plan change in the rationale.
 
 ## Mission: diagnose
 

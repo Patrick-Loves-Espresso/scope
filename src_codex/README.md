@@ -37,10 +37,12 @@ Python 3 and the packages installed with:
 python3 -m pip install -r plugins/scope/requirements.txt
 ```
 
-CodeGraph is optional and CLI-only. When the `codegraph` CLI is installed, the
-lifecycle commands run one `codegraph sync` (or `init` when `.codegraph/` is
-missing and git-ignored) in the checkout or worktree they work in; workers and
-reviewers only query it.
+CodeGraph is optional. When the `codegraph` CLI is installed, the lifecycle
+commands run `codegraph init` once in a checkout or worktree whose
+`.codegraph/` is missing and git-ignored, the runner syncs the index before each
+job, and workers and reviewers only query it: Codex reviewers through the
+CodeGraph MCP server the runner gives each run (their read-only sandbox cannot
+open the index), everyone else through the CLI.
 
 The launcher invokes the provider CLIs directly in headless mode: Codex
 (`codex exec`), Claude (`claude --print --safe-mode`), and OpenCode for
@@ -63,6 +65,6 @@ provider CLIs run on macOS and Linux.
 - Claude slash commands are not native Codex commands. They are invoked by natural language, usually `scope:<command>`.
 - The lifecycle commands launch workers and reviewers through Scope's launcher rather than native subagents, so model, effort, and sandbox are set by the policy file.
 - Claude task tools are replaced by `.scope/` tracking files and Codex task plans where practical.
-- MCP servers must be configured in Codex separately. Scope deliberately uses
-  the CodeGraph CLI rather than a CodeGraph MCP; the plugin's `.mcp.json`
-  remains available for unrelated project-specific MCP configuration.
+- MCP servers must be configured in Codex separately. Scope's launcher gives
+  only its Codex reviewers a CodeGraph MCP server, per run; the plugin's
+  `.mcp.json` remains available for project-specific MCP configuration.

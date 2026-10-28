@@ -61,8 +61,8 @@ This runs the same checks as GitHub Actions, including whitespace checks for
 staged and untracked files, mirrored Claude/Codex file changes, generated-file
 rejection, the install smoke test (including removal of retired files), the
 complexity budgets (lifecycle Python ≤ 3,000 lines, modules ≤ 450 code lines,
-lifecycle command prompts ≤ 150 lines, one policy file), and the test suite
-with its 90% coverage threshold.
+lifecycle command prompts ≤ 150 lines, one policy file), ruff and mypy on the
+scripts, and the test suite with its 90% coverage threshold.
 
 For quick manual install checks, you can also verify that installation propagates
 the files correctly:
@@ -95,7 +95,7 @@ Examples to exclude:
 
 Command changes should be explicit about paths and working directories. If a command operates inside an epic worktree, document whether reads, writes, and git commands run from the main repository root or the worktree.
 
-For CodeGraph support, use the CodeGraph CLI when it is installed, read-only for workers and reviewers; Scope does not use a CodeGraph MCP.
+For CodeGraph support, Claude workers and reviewers and Codex workers use the CodeGraph CLI read-only; Codex reviewers use the CodeGraph MCP server Scope's launcher gives each run, because their read-only sandbox cannot open the index (U40). Scope never installs a CodeGraph MCP server into a user's agent configuration.
 
 Every new rule should state the model weakness it assumes and how to test whether it is still needed. Record incidents in `docs/lessons-learned/` first; add code only when a lesson recurs and no simpler fix exists.
 

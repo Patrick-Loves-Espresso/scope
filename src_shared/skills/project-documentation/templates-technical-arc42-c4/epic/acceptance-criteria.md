@@ -3,6 +3,8 @@
 The user approves this file at Gate 1. It states what the epic delivers, how
 big it should be, and what it deliberately leaves out. Keep criteria concise
 and observable; include only the error cases that matter to the product.
+Refer to other documents by repository path in backticks
+(`docs/product/...`), not relative links: archiving the epic moves this file.
 
 ```yaml scope
 size_estimate:
@@ -21,6 +23,9 @@ size_estimate:
 
 **Given** [precondition] **when** [user or system action] **then** [observable
 result, with a measurable threshold where one applies].
+
+**If missed:** [only when the result depends on a measurement: adjust within a
+stated range, record it and continue, or stop for the user]
 
 ### AC-002: [Error case that matters to the product]
 

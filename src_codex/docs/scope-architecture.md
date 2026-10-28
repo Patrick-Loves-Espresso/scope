@@ -55,6 +55,7 @@ verified.
                ├── scope_launch.py work    ──► planner / implementer (host provider)
                ├── scope_launch.py review  ──► the epic's reviewers and adjudicator (read-only)
                ├── scope_reviewers.py      ──► reviewer settings, preflight, metrics
+               ├── scope_oversee.py audit  ──► an overseer's drift audit by the audit reviewers (read-only)
                ├── scope_verify.py         ──► runs the plan's validation commands
                ├── scope_review.py         ──► finding states from review.md
                └── scope_check.py          ──► criteria, plan, Gate 1, Gate 2, merge
@@ -71,7 +72,7 @@ scope/
 ├── src_shared/
 │   ├── commands/        # Workflow commands (shared by Claude and Codex)
 │   ├── workers/         # planner.md, implementer.md, reviewer.md
-│   ├── scripts/         # scope_launch, scope_providers, scope_review, scope_verify, scope_check, scope_common
+│   ├── scripts/         # scope_launch, scope_providers, scope_review, scope_verify, scope_check, scope_oversee, scope_common
 │   ├── config/          # scope-policy.yaml (the only policy file)
 │   ├── governance/      # simplicity-and-size.md, developer-checklist.md
 │   ├── agents/          # Standalone roles
@@ -95,9 +96,10 @@ your-project/
 │   ├── architecture/            # current state only: arc42 01-13, ADRs, 13-specs
 │   ├── epics/<epic>/            # the epic's files while it is being refined and built
 │   ├── epics/_implemented/<epic>/
+│   ├── oversight/<name>.md      # an overseer's state and handoff; <name>/checks/ and <name>/notes/ beside it
 │   └── lessons-learned/
 ├── wip/<epic-id>/               # worktree on branch epic/<epic-id>
-└── tmp_debug/scope-runs/<epic>/ # git-ignored prompts, transcripts, and test logs
+└── tmp_debug/scope-runs/<epic>/ # git-ignored prompts, transcripts, and test logs, worktree jobs' included
 ```
 
 ---
@@ -114,6 +116,7 @@ your-project/
 | `/audit_epic {epic}` | Audit by the epic's reviewers with fix, verify, and adjudication |
 | `/wrap_epic {epic}` | Gate 2 on the exact commit and the pinned merge |
 | `/sync_product [epic]` | Update product docs after scope-changing work |
+| `/overseer {name} [epics]` | Oversee a program of epics: drift audits at Gate 1, plan and merge, the user's decisions prepared |
 | `/scope_reviewers` (Codex: `scope:reviewers`) | Choose the reviewers and adjudicator per workflow, with a preflight |
 | `/re_documentation`, `/re_ops` | Reverse engineer docs from an existing codebase |
 | `/decision`, `/lesson`, `/audit_decisions` | Capture decisions and lessons |
@@ -154,7 +157,9 @@ tests, lint, and type checks and records pre-existing failures under
 approves the criteria, the size estimate, the "not building" list, and the
 baseline as shown; `scope_check.py approve` commits the file and records its
 git blob hash and commit in `approvals.yaml`.
-A planner job then writes `plan.md`, which `scope_check.py plan` checks. One
+A planner job then writes `plan.md`, which `scope_check.py plan` checks; its
+validation must declare a `lint` and a `types` check (`required_checks` in the
+policy), or list a missing tool in `unavailable_evidence` with the reason. One
 full review by the epic's reviewers follows, and the orchestrator loops on
 `scope_review.py status` (section 7) until the review is settled.
 
@@ -200,6 +205,26 @@ explicit user request records a waiver for an incomplete audit, one per
 missing provider review, and only when at least one independent review
 completed; it is a quality risk, never a pass.
 
+### 4.5 `/overseer`
+
+When several epics are refined and implemented in parallel by separate
+sessions, one overseer session holds them to the program's decided items and
+interfaces. `docs/oversight/<name>.md` is its state and handoff: the user's
+mandate, the sources of truth, the decided items with their sources, the
+epics and their checkpoints, the interfaces and shared files, the queue, and
+the user's decisions. At Gate 1, when a plan is ready (one comparison of all
+plans refined in parallel), and before merge, the overseer fills
+`commands/overseer/drift-audit.md` and runs `scope_oversee.py audit`: the
+project's audit reviewers audit the same prompt, read-only and in parallel.
+It verifies every major finding before keeping it, writes the check under
+`docs/oversight/<name>/checks/`, puts decisions to the user, and relays
+corrections in `docs/oversight/<name>/notes/<epic>.md`. `/epic_refine`,
+`/implement` and `/wrap_epic` read an overseen epic's note through
+`commands/overseer/epic-session.md`, apply the drift rule (no change to a
+decided item, scope between epics, or an interface without the user), and
+say when a check is due. The overseer flags; the user decides. It never
+edits an epic's criteria, plan, review, or approvals.
+
 ---
 
 ## 5. Epic Artifacts
@@ -230,6 +255,7 @@ commit; a later commit stays covered only when it changes nothing but
 | `scope_verify.py` | `run`, `size`, `covers`, `lines` |
 | `scope_check.py` | `criteria`, `approve`, `plan`, `gate2`, `merge`, `waive` |
 | `scope_reviewers.py` | `show` (with `--preflight`), `set` (the project's), `epic` (one epic's request, in `review.md`), `metrics` (one epic or `--all`) |
+| `scope_oversee.py` | `audit`: the project's audit reviewers, read-only and in parallel, on an overseer's filled drift-audit prompt; reports under `tmp_debug/scope-runs/oversight-<name>/`, nothing committed |
 
 Every script prints JSON. Provider invocation keeps the flags proven in Scope
 1.x: Claude runs with `--print --safe-mode --strict-mcp-config --no-chrome
@@ -237,9 +263,13 @@ Every script prints JSON. Provider invocation keeps the flags proven in Scope
 only read tools and read-only `git`/`codegraph` commands; Codex runs `exec
 --ephemeral --ignore-user-config` with a `read-only` sandbox for reviewers and
 `workspace-write` for workers (implementers in a worktree also get the git
-directory via `--add-dir` so they can commit); OpenCode runs `--pure --agent
+directory via `--add-dir` so they can commit), and its reviewers get the
+CodeGraph MCP server through `-c mcp_servers.codegraph.*` when the checkout has
+an index (U40); OpenCode runs `--pure --agent
 plan` with a private data directory per run, because concurrent runs on its
-shared SQLite database fail. Preflight checks each CLI's version (against
+shared SQLite database fail. Claude workers run with background tasks
+disabled and shell timeouts raised to the job's limits, so a long test run
+stays in the foreground instead of dying when the `--print` session ends. Preflight checks each CLI's version (against
 `min_cli_versions` in the policy), flags, authentication, or model catalog.
 Reviewers run in parallel; there is no all-provider barrier. In refinement and
 audit, a failed mandatory reviewer or adjudicator is retried once. Scope never
@@ -328,9 +358,12 @@ validation command of the plan with a POSIX `sh -c` in its own process group
 a non-zero exit, a missing JUnit file, a failure or error in the XML, or a skip
 without a reason. Each criterion's mapped tests must have run and passed;
 `command:<id>` maps a criterion to an exit-code-only command and is recorded as
-such. Milestone runs require the criteria of finished stories; `final` and
-`remediation` runs require all. Coverage of new and changed code is checked by
-a standard tool declared as a `check` command.
+such. Milestone runs require a criterion once every story listing it is
+finished; `final` and `remediation` runs require all. Milestone runs also
+skip commands marked `final_only` (the `criteria` they alone prove are due
+only in the final run) and stop at the first failing command; final and
+remediation runs run every command. Coverage of new and changed code is
+checked by a standard tool declared as a `check` command.
 
 `scope_verify.py size` counts production code lines added since the epic
 branch forked (comments, docstrings, and blank lines excluded, by pygments)
@@ -349,9 +382,10 @@ and reviewer receives. It states the over-engineering tendency it counters and
 the rules: build the minimum that satisfies the criteria, validate only at
 boundaries, handle only errors that can occur, no single-use abstractions,
 reuse first, fewer concepts and lines. Story complexity is scored 0–10 with a
-maximum of 7; modules target 350 code lines with a hard limit of 450. Above a
-limit the agent splits or records an exception that a reviewer judges; the
-runner only reports.
+maximum of 7; a story-size guideline, not a limit, suggests about 200
+production code lines at complexity 6–7 and 300 below (U42); modules target
+350 code lines with a hard limit of 450. Above a limit the agent splits or
+records an exception that a reviewer judges; the runner only reports.
 
 ---
 
@@ -414,9 +448,14 @@ contract forms (OpenAPI, schemas, SQL) in `13-specs/`.
 **12.7 Local files for documentation.** Docs are Markdown in `docs/`, versioned
 with the code.
 
-**12.8 CodeGraph is optional.** When the CLI is installed, commands sync the
-index once and workers and reviewers query it read-only; Scope does not manage
-its lifecycle.
+**12.8 CodeGraph is optional.** When the CLI is installed, `/epic_refine` and
+`/implement` create a checkout's missing index once, the runner syncs it before
+each job (`scope_launch.refresh_index`), and workers and reviewers query it
+read-only. Codex reviewers use the CodeGraph MCP server, which Codex starts
+outside its read-only sandbox, where the CLI cannot open the index; Claude jobs
+keep the CLI, because safe mode loads no MCP server. A checkout without its own
+index gets no CodeGraph instruction: CodeGraph would answer from a parent
+folder's index, which describes other code (U40).
 
 ---
 

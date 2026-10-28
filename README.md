@@ -36,6 +36,7 @@ for genuine product decisions.
 - **`/audit_epic`** — Your reviewers audit the branch independently, including docs against code; findings are fixed and verified, or rejected and adjudicated
 - **`/wrap_epic`** — Show the exact commit for your approval and merge exactly that commit, with the approval recorded in the merge commit
 - **`/sync_product`** — Update product documentation when implementation reveals scope changes
+- **`/overseer`** / **`scope:overseer`** — Oversee a program of epics that separate sessions refine and implement in parallel: hold them to the program's decided items and interfaces, run two independent drift audits at Gate 1, at plan and before merge, verify every finding before relaying it, and prepare your decisions. Its state and handoff live in `docs/oversight/<name>.md`
 - **`/scope_reviewers`** / **`scope:reviewers`** — Choose the reviewers (Claude, Codex, or OpenCode models; mandatory or optional) and the adjudicator for refinement and audit, with a preflight of each ([details](#choosing-reviewers))
 
 ### Reverse Engineering (Code to Docs)
@@ -68,17 +69,20 @@ fresh provider processes through Scope's launcher:
 
 Workers run on the provider that hosts the command. Scope appends the
 simplicity-and-size rules to every worker and reviewer prompt: build the
-minimum that satisfies the criteria, story complexity at most 7/10, modules at
-most 450 code lines. Tests are executed by Scope's runner, never reported by a
+minimum that satisfies the criteria, story complexity at most 7/10, stories of
+about 200 production lines at complexity 6–7 and 300 below (a guideline),
+modules at most 450 code lines. Tests are executed by Scope's runner, never reported by a
 model.
 
 Each epic keeps six files: `details.md`, `acceptance-criteria.md`,
 `approvals.yaml`, `plan.md`, `review.md`, and `verification.yaml`. Git records
 everything else. Raw logs go to the git-ignored `tmp_debug/scope-runs/`.
 
-CodeGraph is optional. When its CLI is installed, the lifecycle commands sync
-the index once per command and workers and reviewers query it read-only. Add
-`.codegraph/` to the target repository's `.gitignore`.
+CodeGraph is optional. When its CLI is installed, the lifecycle commands create
+the index of each checkout once, the runner syncs it before each job, and
+workers and reviewers query it read-only: Codex reviewers through the CodeGraph
+MCP server the runner gives them (their sandbox cannot open the index), everyone
+else through the CLI. Add `.codegraph/` to the target repository's `.gitignore`.
 
 See [the architecture](docs/scope-architecture.md) for the full lifecycle.
 
@@ -306,6 +310,12 @@ them on a committed state, reads standard JUnit XML (pytest `--junitxml`,
 gotestsum, a Jest reporter), checks that the tests mapped to each criterion
 ran and passed, and records the result in `verification.yaml`.
 
+**Lean project instructions.** Every worker reads the project's `CLAUDE.md`
+or `AGENTS.md` at the start of every job. Keep it under about 200 lines:
+commands an agent cannot guess, project gotchas, and pointers to the docs.
+Anthropic's guidance is that bloated instruction files make Claude ignore the
+instructions that matter.
+
 **Durable documentation.** Each epic declares its doc obligations. Before the
 audit, the implementer finalizes ADRs, arc42 sections, and specs, and archives
 the epic folder on the branch, so the audit checks the docs against the code
@@ -331,7 +341,8 @@ Install `requirements-dev.txt`, activate the hooks once with
 before committing. The gate checks whitespace, mirrored Claude/Codex files,
 the install smoke test (including removal of retired files), the complexity
 budgets (lifecycle Python ≤ 3,000 lines, modules ≤ 450 code lines, command
-prompts ≤ 150 lines, one policy file), and runs the test suite with
+prompts ≤ 150 lines, one policy file), lints the scripts and tests with ruff,
+type-checks the scripts with mypy, and runs the test suite with
 subprocess-aware coverage (minimum 90%).
 
 ## License

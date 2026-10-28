@@ -5,7 +5,7 @@ description: Run Scope-style product engineering workflows in Codex using comman
 
 # Scope Workflows for Codex
 
-Use this skill when the user asks for Scope-like workflows in Codex, invokes `scope:<command>`, or asks to run a Scope command such as `prd_refine`, `epic_refine`, `implement`, `audit_epic`, `wrap_epic`, `re_documentation`, or `sync_product`.
+Use this skill when the user asks for Scope-like workflows in Codex, invokes `scope:<command>`, or asks to run a Scope command such as `prd_refine`, `epic_refine`, `implement`, `audit_epic`, `wrap_epic`, `overseer`, `re_documentation`, or `sync_product`.
 
 ## Artifact Locations
 
@@ -56,6 +56,9 @@ and the read-only reviewers and adjudicator the user chose with
 reviewer's job in the orchestrating session,
 and never substitute Codex sub-agents for them. Scope's runner, not a model,
 executes the validation commands and writes `verification.yaml`.
+`scope:overseer` oversees several epics refined in other sessions; its
+drift audits run through `scripts/scope_oversee.py`, which launches the
+project's audit reviewers read-only, so they too are never sub-agents.
 
 The standalone architect, developer, product-owner, and reverse-engineering
 agents serve workflows outside these lifecycle commands.
@@ -71,12 +74,14 @@ agents serve workflows outside these lifecycle commands.
 
 Use Obsidian MCP when available for prior decisions, lessons, and related product notes. If Obsidian MCP is unavailable, continue with local repo search and say that MCP was unavailable.
 
-CodeGraph is optional and used only through its command-line interface. When
-the `codegraph` CLI is installed, the lifecycle commands run one `codegraph
-sync` (or `init` when `.codegraph/` is missing and git-ignored) in the checkout
-or worktree they work in. Workers and reviewers only query it (`explore`,
-`node`, `query`, `callers`, `callees`, `impact`, `affected`) and confirm what
-matters in the source; they never initialize, index, or sync it.
+CodeGraph is optional. When the `codegraph` CLI is installed, the lifecycle
+commands run `codegraph init` once in a checkout or worktree whose
+`.codegraph/` is missing and git-ignored, and Scope's runner syncs the index
+before each job. Workers and reviewers only query it (`explore`, `node`,
+`callers`, `impact`, `affected`) and confirm what matters in the source; they
+never initialize, index, or sync it. Codex reviewers query it through the
+CodeGraph MCP server the runner gives each run, because their read-only sandbox
+cannot open the index; everyone else uses the CLI.
 
 ## Quality Bar
 

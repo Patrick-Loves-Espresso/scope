@@ -1,4 +1,4 @@
-"""A scripted stand-in for the claude, codex, and opencode CLIs.
+"""A scripted stand-in for the claude, codex, and opencode CLIs, and a call-logging codegraph.
 
 It answers the preflight probes, then plays the planner, implementer, or
 reviewer named at the top of the prompt, writing real files and commits in the
@@ -213,6 +213,10 @@ def deliver(message: str) -> None:
 
 def main() -> None:
     probe = ARGS[:2]
+    if PROVIDER == "codegraph":  # FAKE_FAIL=codegraph makes it exit 2, as a busy index does
+        with Path(os.environ["FAKE_STATE"], "calls.jsonl").open("a") as log:
+            log.write(json.dumps({"provider": PROVIDER, "args": ARGS, "cwd": os.getcwd()}) + "\n")
+        sys.exit(2 if listed("FAKE_FAIL") else 0)
     if ARGS == ["--version"]:
         if listed("FAKE_UNAVAILABLE"):
             sys.exit(1)
@@ -242,6 +246,8 @@ def main() -> None:
                     "first_line": prompt.splitlines()[0],
                     "data_home": os.environ.get("XDG_DATA_HOME"),
                     "auth": Path(os.environ.get("XDG_DATA_HOME", "/nonexistent"), "opencode", "auth.json").is_file(),
+                    "foreground": [os.environ.get(key) for key in (
+                        "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "BASH_DEFAULT_TIMEOUT_MS", "BASH_MAX_TIMEOUT_MS")],
                 }
             )
             + "\n"
