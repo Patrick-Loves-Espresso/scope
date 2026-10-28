@@ -208,6 +208,15 @@ def test_claude_workers_keep_long_commands_in_the_foreground(planned, fake):
     assert calls(fake)[-1]["foreground"] == ["1", "3600000", "14400000"]
 
 
+def test_every_launched_provider_runs_with_director_disabled(planned, fake, monkeypatch):
+    monkeypatch.setenv("DIRECTOR_BIN", "/usr/local/bin/director")  # the orchestrating session's own setting
+    work(planned)
+    review(planned, "refine", "full")
+    launched = [c for c in calls(fake) if c["provider"] in ("claude", "codex", "opencode")]
+    assert {c["provider"] for c in launched} == {"claude", "codex"}
+    assert {c["director_bin"] for c in launched} == {providers.DIRECTOR_OFF}
+
+
 def test_worker_prompts_give_the_time_limit_as_guidance(planned, fake):
     work(planned, role="implementer", task="Implement plan.md.")
     prompt = sorted((planned / "tmp_debug" / "scope-runs").rglob("*-implementer/prompt.md"))[-1].read_text()

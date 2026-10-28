@@ -32,11 +32,14 @@ confirmation after reading it.
 
 ## Rules
 
+- When Director is installed (Step 0), write nothing: send the user to
+  Director's handoff and stop.
 - Overwrite `session-handoff.md` if it already exists.
 - Write the file at the active git worktree root from `git rev-parse
   --show-toplevel`, or `pwd` when not in git.
 - Ensure `session-handoff.md` is ignored locally:
-  - If inside git, add it to `.git/info/exclude` when missing.
+  - If inside git, add it to the shared exclude
+    (`<git common dir>/info/exclude`, which every worktree reads) when missing.
   - Do not modify the target project's tracked `.gitignore`.
 - Use durable artifacts for observed state.
 - Draft proposed goal, current status, constraints, and open questions from the
@@ -54,18 +57,35 @@ confirmation after reading it.
 
 ## Execution
 
+### Step 0: Defer to Director When Installed
+
+Director (an optional session-state tool) is installed when its hub and its
+command both exist:
+
+```bash
+DIRECTOR_HOOKS="${DIRECTOR_HOOKS_DIR:-$HOME/.claude/director/hooks}"
+if [ -d "${DIRECTOR_HUB:-$HOME/.director}/projects" ] && \
+   { command -v director >/dev/null 2>&1 || [ -x "$DIRECTOR_HOOKS/../bin/director" ]; }; then
+  echo "director-installed"
+fi
+```
+
+When it prints `director-installed`, write no file: tell the user to run
+Director's handoff instead (Claude Code: `/director:handoff`; Codex:
+`$director-handoff`), and stop. Never run Director yourself. Otherwise continue
+with Step 1.
+
 ### Step 1: Locate Target Root
 
 ```bash
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   ROOT="$(git rev-parse --show-toplevel)"
-  GIT_DIR="$(git rev-parse --git-dir)"
-  mkdir -p "$GIT_DIR/info"
-  grep -qxF 'session-handoff.md' "$GIT_DIR/info/exclude" 2>/dev/null || \
-    echo 'session-handoff.md' >> "$GIT_DIR/info/exclude"
+  COMMON_DIR="$(git rev-parse --git-common-dir)"  # every worktree reads its exclude
+  mkdir -p "$COMMON_DIR/info"
+  grep -qxF 'session-handoff.md' "$COMMON_DIR/info/exclude" 2>/dev/null || \
+    echo 'session-handoff.md' >> "$COMMON_DIR/info/exclude"
 else
   ROOT="$(pwd)"
-  GIT_DIR=""
 fi
 
 HANDOFF_FILE="${ROOT}/session-handoff.md"

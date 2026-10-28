@@ -1,6 +1,6 @@
 # Scope Simplification Plan
 
-**Status:** Approved by the user on 2026-09-22 (revision 7)
+**Status:** Approved by the user on 2026-09-22 (revision 7); revision 8 (2026-10-28) records Director cohabitation
 **Date:** 2026-09-22
 **Scope of change:** the post-breakdown lifecycle (`/epic_refine`, `/implement`,
 `/audit_epic`, `/wrap_epic`) and the scripts, policies, templates, and
@@ -715,8 +715,8 @@ Components:
    - `/sync_product` reads `delivery-manifest.yaml` and
      `implementation-evidence.yaml`;
    - `/lesson` and `/decision` read `implementation-evidence.yaml`;
-   - `/session-handoff` lists the old epic state files. It stays until Director
-     is adopted, which is sequenced after this rebuild (D16).
+   - `/session-handoff` lists the old epic state files. It stays, and defers to
+     Director's handoff when Director is installed (D16 as amended by U29).
 
    The web-epic commands (`/webepic_refine`, `/webepic_implement`) and
    `/website_breakdown`, which only feeds them, are retired rather than updated
@@ -806,30 +806,31 @@ The history shows that simplifications regrow. To prevent that:
 - **Mirroring:** every change in `src_shared/` applies to both platforms. The
   remaining platform-specific files (`src_claude/`, `src_codex/`) are updated
   together, per the repository's mirroring rule.
-- **Session-state tools such as Director (D16).** Director is adopted only after
-  this rebuild is stable; the notes below are the requirements for that later
-  step. Director installs global hooks
-  (`~/.claude/settings.json`, `~/.codex/hooks.json`) that inject its decision
-  log into every new session, plus namespaced commands and skills. It writes to
-  its own hub (`~/.director`), not to the repository. Checked against
-  `~/projects/director` on 2026-09-22:
-  - **Worker and reviewer processes must run without it.** Reviewers must not be
+- **Session-state tools such as Director (D16, amended by U29–U32).** Director
+  is optional: Scope cohabits with it and stays complete without it, and every
+  Director-related change is a no-op or harmless without it. Director installs
+  global hooks (`~/.claude/settings.json`, `~/.codex/hooks.json`) that inject
+  its decision log into every new session, plus namespaced commands and
+  skills. It writes to its own hub (`~/.director`) and to a `.director/` folder
+  in every git checkout a hooked session touches. Checked against Director on
+  2026-10-02 (`docs/lean-lifecycle-execplan.md`, V1–V10) and with Director
+  v1.19.0 installed on 2026-10-28 (O9):
+  - **Worker and reviewer processes run without it.** Reviewers must not be
     anchored by the builder's recorded decisions, and workers take their
-    authority from the plan, not from an injected log.
-    - Claude workers and reviewers already run with `--safe-mode`, which turns
-      off hooks.
-    - Codex processes run with `--ignore-user-config`, which skips only
-      `config.toml`, not `hooks.json`. Once the user trusts Director's hooks,
-      `codex exec` workers and reviewers would receive the injection.
-    - Director has no disable flag, and its throwaway-session mode still
-      injects. Its documented fail-safe does work: a `DIRECTOR_BIN` pointing at
-      a non-existent path makes the hooks exit without doing anything. The new
-      runner therefore sets that variable for every worker and reviewer
-      process, and a test checks it.
+    authority from the plan, not from an injected log. Claude workers and
+    reviewers run with `--safe-mode`, which turns off hooks; Codex processes
+    run with `--ignore-user-config`, which also skips Director's hooks, because
+    Codex keeps hook trust in `config.toml` (V1; revision 7 said the opposite).
+    Both exemptions are CLI details, so the runner sets `DIRECTOR_BIN` to a
+    missing path for every process it launches, which makes Director's hooks
+    exit without doing anything (L38), and a test checks it.
+  - **`.director/` is never committed:** `repo_root()` adds it to the exclude in
+    the git common directory, which every worktree reads (L39).
   - **One home per fact.** Director holds in-flight session state (open loops,
     handoffs, where a session stopped). `plan.md` holds the epic's decisions
-    and progress, and ADRs hold durable decisions. With Director adopted,
-    Scope's `/session-handoff` becomes redundant and is retired.
+    and progress, and ADRs hold durable decisions. `/session-handoff` stays:
+    with Director installed it sends the user to Director's handoff and stops
+    (U29, U30). Scope never runs `director promote` (U32).
   - **No file or name collisions:** Director's commands are namespaced
     (`/director:*`, `$director-*`), it never edits `CLAUDE.md` or `AGENTS.md`,
     and Scope's installers never touch the global settings or hooks files.
@@ -881,7 +882,7 @@ The history shows that simplifications regrow. To prevent that:
 | D13 | Old-format artifacts in the folder of an epic being re-planned | **Decided by the user (2026-09-22):** delete them when re-planning begins; git history keeps them. The new `/epic_refine` starts from `details.md` and the acceptance criteria |
 | D14 | Commit authorization | **Decided and applied (2026-09-22):** Rule 12 in the user's global `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` now says that every commit needs a meaningful label, that labels need no user approval, and to ask the user when in doubt. The Scope-specific exception was removed |
 | D15 | Test coverage | **Decided by the user (2026-09-22):** 90% on new and changed production code, measured per epic rather than per story, with a recorded exception where coverage adds little |
-| D16 | Adopting Director alongside Scope | **Decided by the user (2026-09-22):** adopt it, but only **after** the simplified Scope is stable. This rebuild does not integrate Director. When it is adopted: retire `/session-handoff`, and have the runner disable Director's hooks for worker and reviewer processes (§8). The user installs Director separately |
+| D16 | Adopting Director alongside Scope | **Decided by the user (2026-09-22):** adopt it, but only **after** the simplified Scope is stable. This rebuild does not integrate Director. When it is adopted: retire `/session-handoff`, and have the runner disable Director's hooks for worker and reviewer processes (§8). The user installs Director separately. **Amended by U29 (2026-10-02):** Director is optional and `/session-handoff` is not retired; it defers to Director's handoff when Director is installed (U30). Implemented on 2026-10-28 with L38 and L39 (§8) |
 
 ---
 
@@ -896,6 +897,7 @@ The history shows that simplifications regrow. To prevent that:
 | 5 (2026-09-22) | User decisions D4 and D11–D15: the web-epic commands are retired; the Scope documentation is rewritten and superseded plans deleted; old-format epic artifacts are deleted at re-planning; Rule 12 was changed in both global instruction files; coverage is 90% per epic. Added the compatibility check with Director (§8, D16) |
 | 6 (2026-09-22) | Plan approved. Director adopted (D16): `/session-handoff` retired. `/website_breakdown` retired with the web-epic commands. Defaults D1, D2, D3, and D10 confirmed |
 | 7 (2026-09-22) | Director is sequenced after the rebuild, once the simplified Scope is stable. `/session-handoff` stays and is updated to the new artifacts until then |
+| 8 (2026-10-28) | Director cohabitation (U29–U32): Director is optional; the runner disables it for every process it launches; `.director/` goes to the common exclude; `/session-handoff` stays and defers to Director when installed. §8's Codex note corrected (V1) |
 
 ---
 

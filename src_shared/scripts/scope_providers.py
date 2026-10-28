@@ -28,6 +28,9 @@ REVIEWER_DENIED = "Write,Edit,NotebookEdit,Task,Agent"
 CLAUDE_FLAGS = ("--print", "--safe-mode", "--no-session-persistence", "--permission-mode")
 CODEX_FLAGS = ("--output-last-message", "--ignore-user-config", "--sandbox")
 STDIN_PROVIDERS = {"claude", "codex"}
+# Director's context and writes reach only the orchestrating session (U31, L38): its hooks do nothing when
+# DIRECTOR_BIN names a missing program, in every provider Scope launches.
+DIRECTOR_OFF = os.path.join(os.devnull, "scope-disables-director")
 
 
 def _capture(command: list[str], timeout: float, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
@@ -192,7 +195,7 @@ def run(
             process = subprocess.Popen(
                 [executable, *argv[1:]], cwd=cwd, stdout=stdout, stderr=stderr,
                 stdin=subprocess.PIPE if provider in STDIN_PROVIDERS else subprocess.DEVNULL,
-                env={**os.environ, "NO_COLOR": "1", **private, **(env or {})}, **group,
+                env={**os.environ, "NO_COLOR": "1", "DIRECTOR_BIN": DIRECTOR_OFF, **private, **(env or {})}, **group,
             )
         except OSError as exc:
             return {"exit_code": None, "timed_out": False, "duration_seconds": 0.0, "error": str(exc)}

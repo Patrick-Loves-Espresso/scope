@@ -1,10 +1,11 @@
-"""Epic resolution and `yaml scope` block parsing."""
+"""Epic resolution, `yaml scope` block parsing, and the Director exclude."""
 
 from __future__ import annotations
 
 import pytest
 
-from scope_common import ScopeError, find_epic, scope_blocks, section
+from conftest import git
+from scope_common import ScopeError, find_epic, repo_root, scope_blocks, section
 
 
 def test_find_epic_prefers_active_then_archived_and_rejects_ambiguity(tmp_path):
@@ -36,3 +37,17 @@ def test_scope_blocks_merge_and_ignore_plain_yaml(tmp_path):
     path.write_text("```yaml scope\na: 1\n```\n\n```yaml\nb: 2\n```\n\n```yaml scope\nc: 3\n```\n", encoding="utf-8")
     assert scope_blocks(path) == {"a": 1, "c": 3}
     assert section("## A\n\nbody\n\n## B\n", "A") == "body" and section("## A\n", "C") is None
+
+
+def test_repo_root_excludes_director_once_for_every_worktree(project):
+    exclude = project / ".git" / "info" / "exclude"
+    exclude.write_text("# local\nsession-handoff.md", encoding="utf-8")  # no final newline
+    worktree = project / "wip" / "DEMO-001"
+    git(project, "worktree", "add", "-q", "-b", "epic/DEMO-001", str(worktree))
+    assert repo_root(str(worktree)) == worktree.resolve()
+    assert repo_root(str(project)) == project
+    assert exclude.read_text(encoding="utf-8") == "# local\nsession-handoff.md\n.director/\n"
+    for checkout in (project, worktree):
+        (checkout / ".director").mkdir()
+        (checkout / ".director" / "workstream-id").write_text("w\n")
+        assert git(checkout, "status", "--porcelain") == ""

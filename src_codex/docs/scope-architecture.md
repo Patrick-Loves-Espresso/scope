@@ -271,6 +271,10 @@ shared SQLite database fail. Claude workers run with background tasks
 disabled and shell timeouts raised to the job's limits, so a long test run
 stays in the foreground instead of dying when the `--print` session ends. Preflight checks each CLI's version (against
 `min_cli_versions` in the policy), flags, authentication, or model catalog.
+Every process the launcher starts runs with `DIRECTOR_BIN` set to a missing
+path, so an installed Director's hooks reach only the orchestrating session
+(U31, L38); `repo_root()` adds `.director/` to the exclude in the git common
+directory, which every worktree reads (L39). Both are no-ops without Director.
 Reviewers run in parallel; there is no all-provider barrier. In refinement and
 audit, a failed mandatory reviewer or adjudicator is retried once. Scope never
 replaces a reviewer on its own: only the user's request, recorded with their

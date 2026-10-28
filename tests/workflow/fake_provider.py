@@ -248,6 +248,7 @@ def main() -> None:
                     "auth": Path(os.environ.get("XDG_DATA_HOME", "/nonexistent"), "opencode", "auth.json").is_file(),
                     "foreground": [os.environ.get(key) for key in (
                         "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS", "BASH_DEFAULT_TIMEOUT_MS", "BASH_MAX_TIMEOUT_MS")],
+                    "director_bin": os.environ.get("DIRECTOR_BIN"),
                 }
             )
             + "\n"
