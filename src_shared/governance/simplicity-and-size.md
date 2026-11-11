@@ -82,6 +82,16 @@ A story above it is a hint to split along a natural seam (a component, a
 boundary, a migration). Keep it whole when splitting would cut one testable
 outcome in two.
 
+## Epic size (guideline)
+
+A guideline, not a limit, counted as for stories: about 2,500 production lines
+at most for the whole epic.
+
+An estimate above it at Gate 1 is a hint to split the epic in two along a
+natural seam, preferring parts that touch different code; the planner proposes
+the split as an open product question. Keep it whole when the parts could not
+ship separately.
+
 ## Module size
 
 Code lines exclude blank lines, comments, and docstrings.

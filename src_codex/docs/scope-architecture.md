@@ -387,9 +387,11 @@ the rules: build the minimum that satisfies the criteria, validate only at
 boundaries, handle only errors that can occur, no single-use abstractions,
 reuse first, fewer concepts and lines. Story complexity is scored 0–10 with a
 maximum of 7; a story-size guideline, not a limit, suggests about 200
-production code lines at complexity 6–7 and 300 below (U42); modules target
-350 code lines with a hard limit of 450. Above a limit the agent splits or
-records an exception that a reviewer judges; the runner only reports.
+production code lines at complexity 6–7 and 300 below (U42), and an
+epic-size guideline about 2,500 for the whole epic, above which the planner
+proposes a split (U43); modules target 350 code lines with a hard limit of
+450. Above a limit the agent splits or records an exception that a reviewer
+judges; the runner only reports.
 
 ---
 
