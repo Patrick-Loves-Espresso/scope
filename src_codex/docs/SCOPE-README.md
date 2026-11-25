@@ -322,8 +322,13 @@ audit missing a mandatory reviewer never passes.
 
 **Runner verification.** The plan declares its validation commands; Scope runs
 them on a committed state, reads standard JUnit XML (pytest `--junitxml`,
-gotestsum, a Jest reporter), checks that the tests mapped to each criterion
-ran and passed, and records the result in `verification.yaml`.
+gotestsum, a Jest or Vitest reporter), checks that the tests mapped to each
+criterion ran and passed, and records the result in `verification.yaml`.
+Every plan also declares a `lint` and a `types` check with the project's own
+commands, for example `ruff check .` and `mypy` for Python, or `eslint .` and
+`tsc --noEmit` for TypeScript and React. When a language the epic changes has
+no such tool, or it is not installed, the planner asks at Gate 1 whether to
+add the standard one in the epic or leave the check out with a reason.
 
 **Lean project instructions.** Every worker reads the project's `AGENTS.md`
 at the start of every job. Keep it under about 200 lines:
