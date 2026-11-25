@@ -46,7 +46,11 @@ below, then stop.
   Record the commit, the commands, and their results under "Baseline". When
   these commands already fail, ask one product question: fix the failures in
   this epic (the size estimate includes the fix) or leave them out of
-  validation with a recorded reason.
+  validation with a recorded reason. Likewise, when a language the epic
+  changes has no lint or type tool, or its tool is not installed, ask whether
+  to add the standard one in this epic (for TypeScript and React, ESLint with
+  typescript-eslint and `tsc`; for Python, ruff and mypy) or leave the check
+  out with a recorded reason.
 - Genuine product questions go under "Open product questions", all of them at
   once, each with the options and their consequences. Decide technical
   questions yourself.
@@ -63,8 +67,13 @@ below, then stop.
   story estimates sum to the plan estimate.
 - Validation commands that write JUnit XML with standard tooling, lint and type
   checks with the ids `lint` and `types` (a project without such a tool lists
-  the id in `unavailable_evidence` with the reason), and a coverage check of
-  new and changed code. Order them fastest first: a milestone run stops at the
+  the id in `unavailable_evidence` with the reason the user gave at Gate 1),
+  and a coverage check of new and changed code. Use the project's own commands
+  or scripts, for example `ruff check .`, `mypy` and
+  `pytest --junitxml={junit}` for Python, or `eslint .`, `tsc --noEmit`
+  (`tsc -b` with project references) and
+  `vitest run --reporter=junit --outputFile={junit}` for TypeScript and React.
+  Order them fastest first: a milestone run stops at the
   first failing command. Mark slow live or benchmark commands `final_only:
   true`, with the `criteria` only they prove; milestone runs skip them. Handle the baseline's
   failures as the user decided at Gate 1. Map every criterion to the tests that

@@ -159,7 +159,11 @@ baseline as shown; `scope_check.py approve` commits the file and records its
 git blob hash and commit in `approvals.yaml`.
 A planner job then writes `plan.md`, which `scope_check.py plan` checks; its
 validation must declare a `lint` and a `types` check (`required_checks` in the
-policy), or list a missing tool in `unavailable_evidence` with the reason. One
+policy) with the project's own commands (for example `ruff check .` and `mypy`,
+or `eslint .` and `tsc --noEmit`). A language the epic changes without such a
+tool, or with the tool not installed, is a Gate 1 question: add the standard
+tool in the epic, or list the check in `unavailable_evidence` with the user's
+reason (U44). One
 full review by the epic's reviewers follows, and the orchestrator loops on
 `scope_review.py status` (section 7) until the review is settled.
 
@@ -358,7 +362,7 @@ reviewers. Suggestions are optional and untracked.
 `scope_verify.py run` requires a clean, committed state. It runs each
 validation command of the plan with a POSIX `sh -c` in its own process group
 (a timeout stops the whole group), replacing `{junit}` with a fresh log path, and reads the JUnit XML that standard reporters write (pytest
-`--junitxml`, `gotestsum --junitfile`, a Jest JUnit reporter). A run fails on
+`--junitxml`, `gotestsum --junitfile`, a Jest or Vitest JUnit reporter). A run fails on
 a non-zero exit, a missing JUnit file, a failure or error in the XML, or a skip
 without a reason. Each criterion's mapped tests must have run and passed;
 `command:<id>` maps a criterion to an exit-code-only command and is recorded as
